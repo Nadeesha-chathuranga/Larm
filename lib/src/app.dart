@@ -21,6 +21,13 @@ class LarmApp extends ConsumerWidget {
       theme: larmGlassTheme,
       darkTheme: larmGlassTheme,
       themeMode: ThemeMode.dark,
+      // One aurora backdrop behind every route, sheet and dialog.
+      builder: (context, child) => Stack(
+        children: [
+          const Positioned.fill(child: AuroraBackdrop()),
+          if (child != null) Positioned.fill(child: child),
+        ],
+      ),
       home: const DashboardPage(),
       onGenerateRoute: (routeSettings) {
         Map<String, Object?>? triggerArgs;

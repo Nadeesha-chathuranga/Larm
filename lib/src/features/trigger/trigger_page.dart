@@ -172,7 +172,6 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final entrance = motionEnabled(context) ? 300.ms : Duration.zero;
     final settings = ref.watch(settingsControllerProvider);
     final use24h = settings.timeFormat == 1;
@@ -204,17 +203,19 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
               child: GlassCard(
                 padding: const EdgeInsets.all(28),
                 tint: LarmPalette.glassStrong,
+                accent: LarmPalette.pink,
+                glow: true,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Stack(
                       alignment: Alignment.center,
                       children: [
-                        PulseRings(size: 240, color: LarmPalette.violet),
+                        PulseRings(size: 240, color: LarmPalette.pink),
                         Icon(
                               LucideIcons.bellRing,
                               size: 80,
-                              color: LarmPalette.violet,
+                              color: LarmPalette.pink,
                             )
                             .animate()
                             .scale(duration: entrance)
@@ -222,20 +223,27 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
                       ],
                     ),
                     const SizedBox(height: 24),
-                    Text(
+                    NeonText(
                           title,
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.headlineLarge,
+                          style:
+                              Theme.of(context).textTheme.headlineLarge ??
+                              const TextStyle(fontSize: 32),
+                          gradient: LarmPalette.hotGradient,
+                          glow: LarmPalette.pink,
                         )
                         .animate()
                         .fadeIn(duration: entrance)
                         .scale(duration: entrance),
                     if (timeLabel.isNotEmpty) ...[
                       const SizedBox(height: 8),
-                      Text(
+                      NeonText(
                         timeLabel,
-                        style: Theme.of(context).textTheme.displayMedium
-                            ?.copyWith(fontFeatures: _tabular),
+                        style:
+                            Theme.of(context).textTheme.displayMedium
+                                ?.copyWith(fontFeatures: _tabular) ??
+                            const TextStyle(fontSize: 48),
+                        gradient: LarmPalette.sunsetGradient,
+                        glow: LarmPalette.amber,
                       ).animate().fadeIn(duration: entrance),
                     ],
                     if (missing) ...[
@@ -261,6 +269,19 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
                           style: FilledButton.styleFrom(
                             minimumSize: const Size.fromHeight(60),
                             textStyle: Theme.of(context).textTheme.titleLarge,
+                            backgroundColor: LarmPalette.violet.withValues(
+                              alpha: 0.35,
+                            ),
+                            foregroundColor: LarmPalette.text,
+                            side: const BorderSide(
+                              color: LarmPalette.violet,
+                              width: 1.5,
+                            ),
+                            shadowColor: LarmPalette.violet,
+                            elevation: 8,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
                           ),
                           onPressed: _remaining > 0
                               ? () async {
@@ -276,10 +297,15 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
                         width: double.infinity,
                         child: FilledButton(
                           style: FilledButton.styleFrom(
-                            backgroundColor: scheme.error,
-                            foregroundColor: scheme.onError,
+                            backgroundColor: LarmPalette.coral,
+                            foregroundColor: LarmPalette.backgroundDeep,
                             minimumSize: const Size.fromHeight(60),
                             textStyle: Theme.of(context).textTheme.titleLarge,
+                            shadowColor: LarmPalette.coral,
+                            elevation: 10,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
                           ),
                           onPressed: () async {
                             await hapticConfirm();
@@ -290,6 +316,13 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
                       ),
                     ] else ...[
                       FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: LarmPalette.violet,
+                          foregroundColor: LarmPalette.backgroundDeep,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
                         onPressed: () => Navigator.maybePop(context),
                         child: const Text('Close'),
                       ),

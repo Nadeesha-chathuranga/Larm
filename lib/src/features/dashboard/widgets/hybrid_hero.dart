@@ -34,6 +34,8 @@ class HybridHero extends StatelessWidget {
     return GlassCard(
       padding: const EdgeInsets.all(20),
       tint: LarmPalette.glassStrong,
+      accent: LarmPalette.cyan,
+      glow: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -76,19 +78,39 @@ class HybridHero extends StatelessWidget {
                             color: LarmPalette.muted,
                           ),
                         ),
+                        const Spacer(),
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: LarmPalette.mint,
+                            boxShadow: [
+                              BoxShadow(
+                                color: LarmPalette.mint,
+                                blurRadius: 10,
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 4),
                     FittedBox(
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerLeft,
-                      child: Text(
+                      child: NeonText(
                         primaryTime,
-                        style: textTheme.displayMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          fontFeatures: _tabular,
-                          color: LarmPalette.text,
-                        ),
+                        style:
+                            textTheme.displayMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              fontFeatures: _tabular,
+                            ) ??
+                            const TextStyle(
+                              fontSize: 48,
+                              fontWeight: FontWeight.w800,
+                            ),
+                        glow: LarmPalette.cyan,
                       ),
                     ),
                   ],
@@ -100,7 +122,7 @@ class HybridHero extends StatelessWidget {
             const SizedBox(height: 12),
             GlassPill(
               label: nextLabel!,
-              color: LarmPalette.mint,
+              color: LarmPalette.amber,
               style: textTheme.bodyLarge,
             ),
           ],

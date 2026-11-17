@@ -418,6 +418,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       const SizedBox(height: 8),
       GlassCard(
         padding: const EdgeInsets.all(12),
+        accent: LarmPalette.mint,
+        glow: true,
         child: Row(
           children: [
             CustomPaint(
@@ -498,6 +500,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       _sectionLabel(context, 'Sound'),
       GlassCard(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        accent: LarmPalette.pink,
+        glow: true,
         child: ListTile(
           leading: const GlassIcon(
             icon: LucideIcons.music2,

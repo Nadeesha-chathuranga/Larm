@@ -226,6 +226,8 @@ Widget _group(BuildContext context, {required List<Widget> children}) {
     padding: const EdgeInsets.only(bottom: 12),
     child: GlassCard(
       padding: const EdgeInsets.all(20),
+      accent: LarmPalette.violet,
+      glow: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: children,

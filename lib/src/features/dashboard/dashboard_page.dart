@@ -356,13 +356,13 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         closedShape: const CircleBorder(),
         closedColor: Theme.of(context).colorScheme.primaryContainer,
         openBuilder: (context, action) => const EditorPage(),
-        closedBuilder: (_, open) => FloatingActionButton(
+        closedBuilder: (_, open) => NeonFab(
           tooltip: 'New alarm or timer',
+          icon: LucideIcons.plus,
           onPressed: () async {
             await hapticTap();
             open();
           },
-          child: const Icon(LucideIcons.plus),
         ),
       ),
     );
@@ -412,6 +412,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           const SizedBox(height: 12),
           GlassCard(
             tint: LarmPalette.coral.withValues(alpha: 0.12),
+            accent: LarmPalette.coral,
+            glow: true,
             child: ListTile(
               leading: const GlassIcon(
                 icon: LucideIcons.bellOff,
@@ -440,9 +442,13 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                   boxSize: 76,
                 ),
                 const SizedBox(height: 12),
-                Text(
+                NeonText(
                   'No alarms yet — tap + to add one.',
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style:
+                      Theme.of(context).textTheme.titleMedium ??
+                      const TextStyle(fontSize: 16),
+                  gradient: LarmPalette.hotGradient,
+                  glow: LarmPalette.pink,
                 ),
               ],
             ),
@@ -512,14 +518,32 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     );
   }
 
-  /// Section header with item count.
+  /// Section header with a neon accent bar and item count.
   Widget _listHeader(BuildContext context, String title, int count) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
-      child: Text(
-        '$title · $count',
-        style: Theme.of(context).textTheme.titleMedium
-            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+      padding: const EdgeInsets.fromLTRB(4, 10, 4, 8),
+      child: Row(
+        children: [
+          Container(
+            width: 4,
+            height: 20,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(4),
+              gradient: LarmPalette.hotGradient,
+              boxShadow: const [
+                BoxShadow(color: LarmPalette.pink, blurRadius: 12),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            '$title · $count',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: LarmPalette.text,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }
