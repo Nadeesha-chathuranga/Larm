@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/audio/sounds.dart';
 import '../../../core/haptics.dart';
+import '../../../core/theme/tokens.dart';
 
 /// Grouped tone picker shared by the editor and settings.
 ///
@@ -68,8 +70,19 @@ class _SoundSheetState extends State<_SoundSheet> {
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
           children: [
-            Text('Alarm tone',
-                style: Theme.of(context).textTheme.titleLarge),
+            Row(
+              children: [
+                const GlassIcon(
+                  icon: LucideIcons.music2,
+                  color: LarmPalette.pink,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Alarm tone',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
             for (final category in soundCategories) ...[
               Padding(
@@ -77,24 +90,29 @@ class _SoundSheetState extends State<_SoundSheet> {
                 child: Text(
                   category.toUpperCase(),
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.2,
-                        color:
-                            Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                    color: LarmPalette.muted,
+                  ),
                 ),
               ),
               for (final sound in alarmSounds.where(
-                  (s) => s.category == category))
+                (s) => s.category == category,
+              ))
                 RadioListTile<String>(
                   value: sound.id,
-                  title: Text(sound.label,
-                      style: Theme.of(context).textTheme.titleMedium),
+                  title: Text(
+                    sound.label,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   secondary: sound.id == 'system'
                       ? null
                       : IconButton(
                           tooltip: 'Preview ${sound.label}',
-                          icon: const Icon(Icons.play_arrow),
+                          icon: const Icon(
+                            LucideIcons.play,
+                            color: LarmPalette.cyan,
+                          ),
                           onPressed: () => _preview(sound.id),
                         ),
                 ),

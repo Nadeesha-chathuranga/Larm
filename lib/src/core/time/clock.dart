@@ -2,13 +2,11 @@ import 'package:timezone/timezone.dart' as tz;
 
 import '../../data/models/alarm.dart';
 
-/// Device-local wall-clock now.
-DateTime localNow() => DateTime.now();
-
-/// Absolute UTC now.
+/// Absolute UTC now. Larm is UTC-only: no device-local wall time is used
+/// anywhere in scheduling, display, or repeat calculations.
 DateTime utcNow() => DateTime.now().toUtc();
 
-/// Formats [dt] honoring the 12/24h setting.
+/// Formats the UTC fields of [dt], honoring the 12/24h setting.
 String fmtTime(DateTime dt, {required bool use24h}) {
   final minutes = dt.minute.toString().padLeft(2, '0');
   if (use24h) return '${dt.hour.toString().padLeft(2, '0')}:$minutes';
@@ -17,29 +15,26 @@ String fmtTime(DateTime dt, {required bool use24h}) {
   return '$h12:$minutes $suffix';
 }
 
-/// Converts an absolute UTC instant into the device zone.
-tz.TZDateTime utcToZoned(DateTime utc) =>
-    tz.TZDateTime.from(utc.toUtc(), tz.local);
+/// Convenience for callers holding a local [DateTime]: format its UTC view.
+String fmtUtcTime(DateTime dt, {required bool use24h}) =>
+    fmtTime(dt.toUtc(), use24h: use24h);
 
-/// Builds a device-zone wall time.
-tz.TZDateTime localToZoned(int year, int month, int day, int hour, int minute) =>
-    tz.TZDateTime(tz.local, year, month, day, hour, minute);
-
-/// Next fire instant strictly after [fromLocal], or null when a dated
-/// one-time alarm already passed.
+/// Next UTC fire instant strictly after [fromUtc], or null when a dated
+/// one-time alarm has already passed.
 ///
-/// Local alarms keep wall time in the device zone (DST-safe via `timezone`);
-/// UTC alarms keep the absolute instant regardless of zone.
-tz.TZDateTime? nextOccurrence(Alarm alarm, {required DateTime fromLocal}) {
-  tz.TZDateTime candidate(int year, int month, int day) {
-    if (alarm.isUtc) {
-      return tz.TZDateTime.utc(year, month, day, alarm.hour, alarm.minute);
-    }
-    return tz.TZDateTime(
-        tz.local, year, month, day, alarm.hour, alarm.minute);
-  }
+/// All repeats — daily, weekdays, custom and one-time — are evaluated in
+/// UTC. The device time zone never affects when an alarm fires or what the
+/// dashboard displays.
+tz.TZDateTime? nextOccurrence(Alarm alarm, {required DateTime fromUtc}) {
+  final base = fromUtc.toUtc();
 
-  bool isAfter(tz.TZDateTime c) => c.isAfter(fromLocal);
+  tz.TZDateTime candidate(int year, int month, int day) =>
+      tz.TZDateTime.utc(year, month, day, alarm.hour, alarm.minute);
+
+  bool isAfter(tz.TZDateTime c) => c.isAfter(base);
+
+  tz.TZDateTime nextDay(int offset) =>
+      tz.TZDateTime.from(base, tz.UTC).add(Duration(days: offset));
 
   switch (alarm.repeat) {
     case AlarmRepeat.oneTime:
@@ -47,32 +42,23 @@ tz.TZDateTime? nextOccurrence(Alarm alarm, {required DateTime fromLocal}) {
         final at = candidate(alarm.year!, alarm.month!, alarm.day!);
         return isAfter(at) ? at : null;
       }
-      // Undated one-time behaves like the next daily slot.
-      final base = alarm.isUtc ? fromLocal.toUtc() : fromLocal;
+      // Undated one-time behaves like the next daily UTC slot.
       final today = candidate(base.year, base.month, base.day);
       if (isAfter(today)) return today;
-      final tomorrow =
-          tz.TZDateTime.from(base, alarm.isUtc ? tz.UTC : tz.local)
-              .add(const Duration(days: 1));
+      final tomorrow = nextDay(1);
       return candidate(tomorrow.year, tomorrow.month, tomorrow.day);
 
     case AlarmRepeat.daily:
-      final base = alarm.isUtc ? fromLocal.toUtc() : fromLocal;
       final today = candidate(base.year, base.month, base.day);
       if (isAfter(today)) return today;
-      final tomorrow =
-          tz.TZDateTime.from(base, alarm.isUtc ? tz.UTC : tz.local)
-              .add(const Duration(days: 1));
+      final tomorrow = nextDay(1);
       return candidate(tomorrow.year, tomorrow.month, tomorrow.day);
 
     case AlarmRepeat.weekdays:
     case AlarmRepeat.custom:
       final useCustom = alarm.repeat == AlarmRepeat.custom;
-      final base = alarm.isUtc ? fromLocal.toUtc() : fromLocal;
       for (var offset = 0; offset < 8; offset++) {
-        final day =
-            tz.TZDateTime.from(base, alarm.isUtc ? tz.UTC : tz.local)
-                .add(Duration(days: offset));
+        final day = nextDay(offset);
         final weekday = day.weekday; // Mon=1 … Sun=7
         final matches = useCustom
             ? (alarm.days.length == 7 && alarm.days[weekday - 1])

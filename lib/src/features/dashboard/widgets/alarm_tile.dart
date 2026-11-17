@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/haptics.dart';
+import '../../../core/theme/tokens.dart';
 import '../../../data/models/alarm.dart';
 import '../../../data/models/larm_timer.dart';
 
@@ -46,11 +48,9 @@ class AlarmTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     return ListTile(
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       title: Text(
         alarm.title.isEmpty ? 'Alarm' : alarm.title,
         maxLines: 1,
@@ -64,17 +64,7 @@ class AlarmTile extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              border: Border.all(color: scheme.outlineVariant),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              alarm.isUtc ? 'UTC' : 'LOCAL',
-              style: Theme.of(context).textTheme.labelSmall,
-            ),
-          ),
+          const GlassPill(label: 'UTC', color: LarmPalette.cyan),
           const SizedBox(width: 4),
           Semantics(
             label:
@@ -149,14 +139,19 @@ class TimerTile extends StatelessWidget {
     final paused = status == TimerStatus.paused;
     final textTheme = Theme.of(context).textTheme;
     return ListTile(
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      leading: const Icon(Icons.timer_outlined, size: 32),
-      title: Text(title.isEmpty ? 'Timer' : title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: textTheme.titleLarge
-              ?.copyWith(fontWeight: FontWeight.w600)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      leading: const GlassIcon(
+        icon: LucideIcons.timer,
+        color: LarmPalette.cyan,
+        size: 22,
+        boxSize: 44,
+      ),
+      title: Text(
+        title.isEmpty ? 'Timer' : title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+      ),
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 4),
         child: Text(remainingLabel, style: textTheme.bodyLarge),
@@ -167,7 +162,7 @@ class TimerTile extends StatelessWidget {
           if (running)
             IconButton(
               tooltip: 'Pause',
-              icon: const Icon(Icons.pause),
+              icon: const Icon(LucideIcons.pause),
               onPressed: () async {
                 await hapticTap();
                 onPause();
@@ -176,7 +171,7 @@ class TimerTile extends StatelessWidget {
           else
             IconButton(
               tooltip: paused ? 'Resume' : 'Start',
-              icon: const Icon(Icons.play_arrow),
+              icon: const Icon(LucideIcons.play),
               onPressed: () async {
                 await hapticTap();
                 onResume();
@@ -184,7 +179,7 @@ class TimerTile extends StatelessWidget {
             ),
           IconButton(
             tooltip: 'Reset',
-            icon: const Icon(Icons.restart_alt),
+            icon: const Icon(LucideIcons.rotateCcw),
             onPressed: () async {
               await hapticTap();
               onReset();

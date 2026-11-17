@@ -58,7 +58,9 @@ void main() {
 
       expect(find.text('Morning a1'), findsOneWidget);
       expect(find.text('Morning a2'), findsOneWidget);
-      expect(find.text('LOCAL'), findsNWidgets(2));
+      // UTC badge on the hero plus one per alarm tile.
+      expect(find.text('UTC').evaluate().length, greaterThanOrEqualTo(3));
+      expect(find.text('Local'), findsNothing);
 
       // Toggle the first alarm off; persistence (not exact scheduling) is
       // what this test verifies — platform channels are absent here.
@@ -76,18 +78,16 @@ void main() {
     });
   });
 
-  testWidgets('hero swaps local and UTC prominence',
-      (WidgetTester tester) async {
+  testWidgets('hero shows UTC only', (WidgetTester tester) async {
     await tester.runAsync(() async {
       await tester.pumpWidget(
         await dashboardScope(dir: dir, suffix: 'hero'),
       );
       await tester.pump();
 
-      expect(find.text('Local'), findsOneWidget);
-      await tester.tap(find.byType(ActionChip).first);
-      await settle(tester);
-      expect(find.text('UTC'), findsOneWidget);
+      expect(find.text('UTC'), findsWidgets);
+      expect(find.text('Local'), findsNothing);
+      expect(find.byType(ActionChip), findsNothing);
     });
   });
 

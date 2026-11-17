@@ -174,7 +174,9 @@ class _AnalogClockState extends State<AnalogClock>
       child: CustomPaint(
         size: Size.square(widget.size),
         painter: AnalogPainter(
-          now: DateTime.now(),
+          // UTC-only app: the analog face shows the same UTC instant as the
+          // digital readout, never the device's local wall time.
+          now: DateTime.now().toUtc(),
           tickColor: widget.tickColor,
           handColor: widget.handColor,
           secondColor: widget.secondColor,
