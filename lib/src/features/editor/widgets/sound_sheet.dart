@@ -74,7 +74,7 @@ class _SoundSheetState extends State<_SoundSheet> {
               children: [
                 const GlassIcon(
                   icon: LucideIcons.music2,
-                  color: LarmPalette.pink,
+                  color: LarmPalette.violet,
                 ),
                 const SizedBox(width: 12),
                 Text(

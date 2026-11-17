@@ -411,9 +411,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         if (showBanner) ...[
           const SizedBox(height: 12),
           GlassCard(
-            tint: LarmPalette.coral.withValues(alpha: 0.12),
+            tint: LarmPalette.coral.withValues(alpha: 0.08),
             accent: LarmPalette.coral,
-            glow: true,
+            glow: false,
             child: ListTile(
               leading: const GlassIcon(
                 icon: LucideIcons.bellOff,
@@ -531,7 +531,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               borderRadius: BorderRadius.circular(4),
               gradient: LarmPalette.hotGradient,
               boxShadow: const [
-                BoxShadow(color: LarmPalette.pink, blurRadius: 12),
+                BoxShadow(color: Color(0x335FE3FF), blurRadius: 8),
               ],
             ),
           ),

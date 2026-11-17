@@ -315,6 +315,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         ? (_isTimer ? 'New timer' : 'New alarm')
         : (_isTimer ? 'Edit timer' : 'Edit alarm');
     return Scaffold(
+      backgroundColor: LarmPalette.backgroundDeep,
       appBar: AppBar(
         title: Text(title),
         actions: [
@@ -418,7 +419,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       const SizedBox(height: 8),
       GlassCard(
         padding: const EdgeInsets.all(12),
-        accent: LarmPalette.mint,
+        accent: LarmPalette.cyan,
         glow: true,
         child: Row(
           children: [
@@ -500,12 +501,12 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       _sectionLabel(context, 'Sound'),
       GlassCard(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        accent: LarmPalette.pink,
+        accent: LarmPalette.violet,
         glow: true,
         child: ListTile(
           leading: const GlassIcon(
             icon: LucideIcons.music2,
-            color: LarmPalette.pink,
+            color: LarmPalette.violet,
           ),
           title: Text(
             _soundLabel(_soundId),

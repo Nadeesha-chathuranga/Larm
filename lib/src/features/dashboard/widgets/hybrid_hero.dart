@@ -87,8 +87,8 @@ class HybridHero extends StatelessWidget {
                             color: LarmPalette.mint,
                             boxShadow: [
                               BoxShadow(
-                                color: LarmPalette.mint,
-                                blurRadius: 10,
+                                color: Color(0x55B9F2FF),
+                                blurRadius: 6,
                               ),
                             ],
                           ),

@@ -5,53 +5,56 @@ import 'package:flutter/material.dart';
 
 import '../motion.dart';
 
-/// Aurora 2.0: near-black space base with saturated violet, cyan, mint, pink
-/// and amber light. Colors stay bright enough to glow on dark glass.
+/// Pure Black: a true-black base with restrained cyan/white accents.
+/// Glows are deliberately faint so glass panels stay crisp on OLED screens.
 abstract final class LarmPalette {
-  static const Color background = Color(0xFF050614);
-  static const Color backgroundDeep = Color(0xFF02030B);
-  static const Color surface = Color(0xFF121936);
+  static const Color background = Color(0xFF000000);
+  static const Color backgroundDeep = Color(0xFF000000);
+  static const Color surface = Color(0xFF0A0C10);
 
-  static const Color violet = Color(0xFFB388FF);
-  static const Color purple = Color(0xFF8B5CF6);
-  static const Color cyan = Color(0xFF4DE8FF);
-  static const Color mint = Color(0xFF5CFFC2);
-  static const Color pink = Color(0xFFFF6EC7);
-  static const Color amber = Color(0xFFFFD166);
-  static const Color coral = Color(0xFFFF6B8A);
+  /// Ice-white accent that replaces the old violet/mint/pink highlights.
+  static const Color violet = Color(0xFFE6F6FF);
+  static const Color purple = Color(0xFFBFE6FF);
+  static const Color cyan = Color(0xFF5FE3FF);
+  static const Color mint = Color(0xFFB9F2FF);
+  static const Color pink = Color(0xFFDCEEFF);
+  static const Color amber = Color(0xFFFFFFFF);
 
-  static const Color text = Color(0xFFF7F8FF);
-  static const Color muted = Color(0xFFACB8DE);
+  /// Kept only for destructive/error semantics; never used decoratively.
+  static const Color coral = Color(0xFFFF6B7A);
 
-  static const Color glass = Color(0x2AFFFFFF);
-  static const Color glassStrong = Color(0x3DFFFFFF);
-  static const Color glassBorder = Color(0x59FFFFFF);
-  static const Color primaryContainer = Color(0x4D4C1D95);
-  static const Color secondaryContainer = Color(0x3A164E63);
+  static const Color text = Color(0xFFFFFFFF);
+  static const Color muted = Color(0xFF93A2B5);
 
-  /// Signature left-to-right aurora sweep used on digits and the add button.
+  static const Color glass = Color(0x12FFFFFF);
+  static const Color glassStrong = Color(0x1FFFFFFF);
+  static const Color glassBorder = Color(0x3AFFFFFF);
+  static const Color primaryContainer = Color(0x1A163B47);
+  static const Color secondaryContainer = Color(0x1A102A33);
+
+  /// Signature left-to-right ice/cyan sweep used on digits and the add button.
   static const LinearGradient brandGradient = LinearGradient(
     colors: [violet, cyan, mint],
     stops: [0.0, 0.55, 1.0],
   );
 
-  /// Hotter accent for alerts and primary call-to-action surfaces.
+  /// Restrained white/cyan gradient for headings and primary actions.
   static const LinearGradient hotGradient = LinearGradient(
-    colors: [pink, violet, cyan],
+    colors: [Colors.white, cyan, violet],
   );
 
   static const LinearGradient sunsetGradient = LinearGradient(
-    colors: [amber, pink, violet],
+    colors: [Colors.white, violet, cyan],
   );
 }
 
-/// The only app theme: dark Aurora glass with neon accents.
+/// The only app theme: pure-black dark glass with minimal cyan accents.
 final ThemeData larmGlassTheme = ThemeData(
   useMaterial3: true,
   colorScheme: const ColorScheme.dark(
-    primary: LarmPalette.violet,
+    primary: LarmPalette.cyan,
     onPrimary: LarmPalette.backgroundDeep,
-    secondary: LarmPalette.cyan,
+    secondary: LarmPalette.violet,
     onSecondary: LarmPalette.backgroundDeep,
     tertiary: LarmPalette.mint,
     onTertiary: LarmPalette.backgroundDeep,
@@ -59,20 +62,20 @@ final ThemeData larmGlassTheme = ThemeData(
     onSurface: LarmPalette.text,
     onSurfaceVariant: LarmPalette.muted,
     outline: LarmPalette.glassBorder,
-    outlineVariant: Color(0x33FFFFFF),
+    outlineVariant: Color(0x24FFFFFF),
     error: LarmPalette.coral,
     onError: LarmPalette.backgroundDeep,
     primaryContainer: LarmPalette.primaryContainer,
-    onPrimaryContainer: Color(0xFFF3E8FF),
+    onPrimaryContainer: Colors.white,
     secondaryContainer: LarmPalette.secondaryContainer,
-    onSecondaryContainer: Color(0xFFCFFAFE),
+    onSecondaryContainer: Colors.white,
     surfaceContainerLowest: LarmPalette.backgroundDeep,
     surfaceContainerLow: LarmPalette.surface,
     surfaceContainer: LarmPalette.surface,
     surfaceContainerHigh: LarmPalette.surface,
     surfaceContainerHighest: LarmPalette.surface,
   ),
-  // The animated aurora lives behind every route (see LarmApp.builder).
+  // The near-invisible backdrop lives behind every route (LarmApp.builder).
   scaffoldBackgroundColor: Colors.transparent,
   cardTheme: CardThemeData(
     color: LarmPalette.glass,
@@ -99,21 +102,51 @@ final ThemeData larmGlassTheme = ThemeData(
   ),
   iconTheme: const IconThemeData(color: LarmPalette.violet, size: 24),
   floatingActionButtonTheme: const FloatingActionButtonThemeData(
-    backgroundColor: LarmPalette.violet,
+    backgroundColor: LarmPalette.cyan,
     foregroundColor: LarmPalette.backgroundDeep,
-    elevation: 10,
-    highlightElevation: 16,
+    elevation: 2,
+    highlightElevation: 4,
   ),
   filledButtonTheme: FilledButtonThemeData(
     style: FilledButton.styleFrom(
-      backgroundColor: LarmPalette.violet,
+      backgroundColor: LarmPalette.cyan,
       foregroundColor: LarmPalette.backgroundDeep,
-      shadowColor: const Color(0x88B388FF),
-      elevation: 6,
+      shadowColor: Colors.transparent,
+      elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       textStyle: const TextStyle(fontWeight: FontWeight.w700),
     ),
   ),
+  // Forms and chips stay visibly dark on the new alarm/editor page.
+  inputDecorationTheme: InputDecorationTheme(
+    filled: true,
+    fillColor: const Color(0x0AFFFFFF),
+    labelStyle: const TextStyle(color: LarmPalette.muted),
+    floatingLabelStyle: const TextStyle(color: LarmPalette.cyan),
+    border: const OutlineInputBorder(
+      borderSide: BorderSide(color: LarmPalette.glassBorder),
+    ),
+    enabledBorder: const OutlineInputBorder(
+      borderSide: BorderSide(color: LarmPalette.glassBorder),
+    ),
+    focusedBorder: const OutlineInputBorder(
+      borderSide: BorderSide(color: LarmPalette.cyan, width: 1.5),
+    ),
+    errorBorder: const OutlineInputBorder(
+      borderSide: BorderSide(color: LarmPalette.coral),
+    ),
+  ),
+  chipTheme: ChipThemeData(
+    brightness: Brightness.dark,
+    backgroundColor: LarmPalette.glass,
+    selectedColor: LarmPalette.primaryContainer,
+    side: const BorderSide(color: LarmPalette.glassBorder),
+    labelStyle: const TextStyle(color: LarmPalette.text),
+    secondaryLabelStyle: const TextStyle(color: LarmPalette.cyan),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+  ),
+  canvasColor: LarmPalette.backgroundDeep,
   segmentedButtonTheme: SegmentedButtonThemeData(
     style: ButtonStyle(
       side: WidgetStateProperty.all(
@@ -139,7 +172,7 @@ final ThemeData larmGlassTheme = ThemeData(
       return LarmPalette.muted;
     }),
     trackColor: WidgetStateProperty.resolveWith((states) {
-      if (states.contains(WidgetState.selected)) return LarmPalette.mint;
+      if (states.contains(WidgetState.selected)) return LarmPalette.cyan;
       return LarmPalette.glassStrong;
     }),
   ),
@@ -173,10 +206,10 @@ Color larmHandColor(ColorScheme scheme) => LarmPalette.violet;
 /// Countdown/progress ring color for the hybrid hero.
 Color larmRingColor(ColorScheme scheme) => LarmPalette.cyan;
 
-/// Slow-drifting aurora light behind every route.
+/// Barely-there cyan light behind every route.
 ///
-/// Respects "remove animations" and never intercepts input. The painter is
-/// cheap: five radial gradients, repainted only by this widget.
+/// Respects "remove animations" and never intercepts input. Two faint radial
+/// gradients on a true-black canvas replace the old five-orb Aurora wash.
 class AuroraBackdrop extends StatefulWidget {
   const AuroraBackdrop({super.key});
 
@@ -188,7 +221,7 @@ class _AuroraBackdropState extends State<AuroraBackdrop>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(seconds: 20),
+    duration: const Duration(seconds: 24),
   );
 
   @override
@@ -239,16 +272,6 @@ class _AuroraPainter extends CustomPainter {
       Offset.zero & size,
       Paint()..color = LarmPalette.backgroundDeep,
     );
-    // A faint vertical wash keeps the base from reading as flat black.
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [LarmPalette.background, LarmPalette.backgroundDeep],
-        ).createShader(Offset.zero & size),
-    );
 
     final w = size.width;
     final h = size.height;
@@ -263,49 +286,28 @@ class _AuroraPainter extends CustomPainter {
           ..shader = RadialGradient(
             colors: [
               color.withValues(alpha: alpha),
-              color.withValues(alpha: alpha * 0.45),
+              color.withValues(alpha: alpha * 0.4),
               color.withValues(alpha: 0),
             ],
-            stops: const [0.0, 0.45, 1.0],
+            stops: const [0.0, 0.4, 1.0],
           ).createShader(rect)
           ..blendMode = BlendMode.screen,
       );
     }
 
     orb(
-      0.14 + 0.05 * math.sin(phase),
-      0.12 + 0.04 * math.cos(phase * 0.8),
-      w * 0.72,
-      LarmPalette.purple,
-      0.34,
-    );
-    orb(
-      0.88 + 0.04 * math.cos(phase * 1.1),
-      0.10 + 0.05 * math.sin(phase * 0.7),
-      w * 0.62,
+      0.86 + 0.03 * math.cos(phase),
+      0.06 + 0.02 * math.sin(phase * 0.8),
+      w * 0.70,
       LarmPalette.cyan,
-      0.28,
+      0.06,
     );
     orb(
-      0.52 + 0.07 * math.sin(phase * 0.6 + 1),
-      0.96 + 0.03 * math.cos(phase),
-      w * 0.85,
-      LarmPalette.mint,
-      0.20,
-    );
-    orb(
-      0.95 + 0.03 * math.sin(phase * 0.9),
-      0.72 + 0.05 * math.cos(phase * 1.2),
-      w * 0.55,
-      LarmPalette.pink,
-      0.20,
-    );
-    orb(
-      0.05 + 0.04 * math.cos(phase * 1.3),
-      0.78 + 0.04 * math.sin(phase * 0.8),
-      w * 0.50,
-      LarmPalette.amber,
-      0.13,
+      0.08 + 0.02 * math.sin(phase * 0.7),
+      0.92 + 0.02 * math.cos(phase),
+      w * 0.65,
+      LarmPalette.violet,
+      0.035,
     );
   }
 
@@ -313,15 +315,15 @@ class _AuroraPainter extends CustomPainter {
   bool shouldRepaint(covariant _AuroraPainter old) => old.t != t;
 }
 
-/// Gradient text with a soft colored halo. Used for the hero clock and empty
-/// state headline; the underlying [Text] keeps all semantics and finders.
+/// Gradient text with a very soft halo. The underlying [Text] keeps all
+/// semantics and finders, so existing widget tests are unaffected.
 class NeonText extends StatelessWidget {
   const NeonText(
     this.text, {
     super.key,
     required this.style,
     this.gradient = LarmPalette.brandGradient,
-    this.glow = LarmPalette.violet,
+    this.glow = LarmPalette.cyan,
   });
 
   final String text;
@@ -339,8 +341,8 @@ class NeonText extends StatelessWidget {
         style: style.copyWith(
           color: Colors.white,
           shadows: [
-            Shadow(color: glow.withValues(alpha: 0.65), blurRadius: 22),
-            Shadow(color: glow.withValues(alpha: 0.35), blurRadius: 8),
+            Shadow(color: glow.withValues(alpha: 0.25), blurRadius: 14),
+            Shadow(color: glow.withValues(alpha: 0.10), blurRadius: 5),
           ],
         ),
       ),
@@ -348,7 +350,7 @@ class NeonText extends StatelessWidget {
   }
 }
 
-/// Frosted container with a gradient hairline edge and optional neon bloom.
+/// Frosted container with a restrained hairline edge and optional soft bloom.
 class GlassCard extends StatelessWidget {
   const GlassCard({
     super.key,
@@ -357,7 +359,7 @@ class GlassCard extends StatelessWidget {
     this.blur = 20,
     this.borderRadius = const BorderRadius.all(Radius.circular(20)),
     this.tint = LarmPalette.glass,
-    this.accent = LarmPalette.violet,
+    this.accent = LarmPalette.cyan,
     this.glow = false,
     this.onTap,
   });
@@ -379,18 +381,18 @@ class GlassCard extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            accent.withValues(alpha: 0.65),
+            accent.withValues(alpha: 0.28),
             LarmPalette.glassBorder,
-            accent.withValues(alpha: 0.20),
+            accent.withValues(alpha: 0.08),
           ],
         ),
         borderRadius: borderRadius,
         boxShadow: glow
             ? [
                 BoxShadow(
-                  color: accent.withValues(alpha: 0.28),
-                  blurRadius: 28,
-                  spreadRadius: -6,
+                  color: accent.withValues(alpha: 0.10),
+                  blurRadius: 20,
+                  spreadRadius: -8,
                 ),
               ]
             : null,
@@ -408,7 +410,7 @@ class GlassCard extends StatelessWidget {
                   end: Alignment.bottomRight,
                   colors: [
                     tint,
-                    tint.withValues(alpha: tint.a * 0.55),
+                    tint.withValues(alpha: tint.a * 0.4),
                   ],
                 ),
                 borderRadius: borderRadius,
@@ -427,7 +429,7 @@ class GlassCard extends StatelessWidget {
   }
 }
 
-/// Icon inside a translucent, tinted and softly glowing backplate.
+/// Icon inside a subtle translucent backplate.
 class GlassIcon extends StatelessWidget {
   const GlassIcon({
     super.key,
@@ -454,18 +456,18 @@ class GlassIcon extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            color.withValues(alpha: 0.40),
-            color.withValues(alpha: 0.10),
+            color.withValues(alpha: 0.18),
+            color.withValues(alpha: 0.05),
           ],
         ),
         shape: BoxShape.circle,
-        border: Border.all(color: color.withValues(alpha: 0.70)),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
         boxShadow: glow
             ? [
                 BoxShadow(
-                  color: color.withValues(alpha: 0.38),
-                  blurRadius: 20,
-                  spreadRadius: -3,
+                  color: color.withValues(alpha: 0.12),
+                  blurRadius: 14,
+                  spreadRadius: -4,
                 ),
               ]
             : null,
@@ -495,14 +497,14 @@ class GlassPill extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            color.withValues(alpha: 0.28),
-            color.withValues(alpha: 0.09),
+            color.withValues(alpha: 0.16),
+            color.withValues(alpha: 0.05),
           ],
         ),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.70)),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
         boxShadow: [
-          BoxShadow(color: color.withValues(alpha: 0.25), blurRadius: 14),
+          BoxShadow(color: color.withValues(alpha: 0.10), blurRadius: 10),
         ],
       ),
       child: Text(
@@ -517,7 +519,7 @@ class GlassPill extends StatelessWidget {
   }
 }
 
-/// Gradient add button with a colored halo. Keeps [Tooltip] so existing
+/// Ice/cyan add button with a soft halo. Keeps [Tooltip] so existing
 /// `find.byTooltip` tests and accessibility behavior still work.
 class NeonFab extends StatelessWidget {
   const NeonFab({
@@ -547,14 +549,14 @@ class NeonFab extends StatelessWidget {
             gradient: LarmPalette.brandGradient,
             boxShadow: [
               BoxShadow(
-                color: Color(0x99B388FF),
-                blurRadius: 26,
-                spreadRadius: 2,
+                color: Color(0x335FE3FF),
+                blurRadius: 18,
+                spreadRadius: 0,
               ),
               BoxShadow(
-                color: Color(0x664DE8FF),
-                blurRadius: 42,
-                offset: Offset(0, 10),
+                color: Color(0x22000000),
+                blurRadius: 12,
+                offset: Offset(0, 6),
               ),
             ],
           ),

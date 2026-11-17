@@ -297,12 +297,15 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
                         width: double.infinity,
                         child: FilledButton(
                           style: FilledButton.styleFrom(
-                            backgroundColor: LarmPalette.coral,
-                            foregroundColor: LarmPalette.backgroundDeep,
+                            backgroundColor: Colors.transparent,
+                            foregroundColor: LarmPalette.text,
                             minimumSize: const Size.fromHeight(60),
                             textStyle: Theme.of(context).textTheme.titleLarge,
-                            shadowColor: LarmPalette.coral,
-                            elevation: 10,
+                            side: const BorderSide(
+                              color: LarmPalette.glassBorder,
+                            ),
+                            shadowColor: Colors.transparent,
+                            elevation: 0,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
                             ),
