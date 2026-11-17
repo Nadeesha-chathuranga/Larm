@@ -7,11 +7,12 @@ class AlarmSound {
   final String id;
   final String label;
 
-  /// One of `General`, `Classic`, `Melodic`, `Ambient`.
+  /// One of `Popular`, `General`, `Classic`, `Melodic`, `Ambient`.
   final String category;
 }
 
 const List<String> soundCategories = [
+  'Popular',
   'General',
   'Classic',
   'Melodic',
@@ -19,6 +20,18 @@ const List<String> soundCategories = [
 ];
 
 const List<AlarmSound> alarmSounds = [
+  // Original royalty-free tones synthesized by tools/generate_sounds.dart.
+  // Ids are stable and ship in both assets/sounds and Android res/raw.
+  AlarmSound('classic_chime', 'Classic Chime', 'Popular'),
+  AlarmSound('digital_clock', 'Digital Clock', 'Popular'),
+  AlarmSound('morning_bell', 'Morning Bell', 'Popular'),
+  AlarmSound('retro_beep', 'Retro Beep', 'Popular'),
+  AlarmSound('marimba_wake', 'Marimba Wake', 'Popular'),
+  AlarmSound('radar_sweep', 'Radar Sweep', 'Popular'),
+  AlarmSound('harp_arpeggio', 'Harp Arpeggio', 'Popular'),
+  AlarmSound('solar_burst', 'Solar Burst', 'Popular'),
+  AlarmSound('soft_piano', 'Soft Piano', 'Popular'),
+  AlarmSound('cosmic_pulse', 'Cosmic Pulse', 'Popular'),
   AlarmSound('system', 'System default', 'General'),
   AlarmSound('mono_beep', 'Mono Beep', 'Classic'),
   AlarmSound('digital_beacon', 'Digital Beacon', 'Classic'),
@@ -53,9 +66,9 @@ const List<VibrationPattern> vibrationPatterns = [
 ];
 
 VibrationPattern vibrationById(String id) => vibrationPatterns.firstWhere(
-      (p) => p.id == id,
-      orElse: () => vibrationPatterns[1],
-    );
+  (p) => p.id == id,
+  orElse: () => vibrationPatterns[1],
+);
 
 bool isKnownSound(String id) => alarmSounds.any((s) => s.id == id);
 

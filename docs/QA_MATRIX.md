@@ -7,10 +7,11 @@
 ## Automated (done in CI-equivalent `flutter test`)
 
 * [x] Daily/weekday/custom/one-time next-fire, incl. expired → null.
-* [x] UTC instant fixed across US DST spring-forward; local wall kept.
-* [x] Local vs UTC diverge correctly on travel day.
+* [x] UTC instant fixed across US DST spring-forward (device zone ignored).
+* [x] Legacy `isUtc` flag has no effect; UTC-only dashboard/editor copy.
 * [x] Scheduler: stable 31-bit ids, follow/override/tone channel routing,
   snooze math, timer completion, syncAll counts, action parsing.
+* [x] 22 bundled tone ids are raw-safe and produce 22 tone channels.
 
 ## Manual — permissions (Android 14+, fresh install)
 
@@ -38,15 +39,25 @@
 
 ## Manual — time behavior
 
-* [ ] Travel across timezones: local alarm keeps wall time, UTC alarm keeps
-  instant (compare dashboard hero + editor preview).
-* [ ] DST transition weekend: daily local alarm still fires at wall time.
+* [ ] Travel across timezones: dashboard clock and every alarm time stay in
+  UTC; editor preview shows the same UTC instant regardless of device zone.
+* [ ] DST transition weekend: daily UTC alarm keeps its fixed instant.
 * [ ] Timer completes with app killed (scheduled completion, not ticker).
+
+## Manual — appearance + tones
+
+* [ ] Dashboard, editor, trigger and settings all show the dark Aurora glass
+  theme; no light/system theme picker remains.
+* [ ] Lucide icons and UTC badges are legible on small screens.
+* [ ] All 10 Popular tones preview in-app and play through their notification
+  channels when used as alarm sounds.
 
 ## Manual — upgrade + scale
 
 * [ ] Install M1 build (v1 channels), upgrade: v1 channels deleted, v2 set
   created, alarms intact.
+* [ ] Upgrade a build with enabled Local alarms: one-time UTC notice appears,
+  those alarms are off, and no Local label is shown anywhere.
 * [ ] 100+ alarms enabled: only next occurrence each is pending
   (`pendingNotificationRequests` well under the ~500 OEM cap).
 

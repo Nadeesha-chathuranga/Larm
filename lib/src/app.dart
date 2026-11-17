@@ -2,34 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/nav.dart';
-import 'core/theme/family.dart';
 import 'core/theme/tokens.dart';
-import 'data/repos/settings_repo.dart';
 import 'features/dashboard/dashboard_page.dart';
 import 'features/editor/editor_page.dart';
 import 'features/settings/settings_page.dart';
 import 'features/trigger/trigger_page.dart';
 
-/// App shell. Reads theme + time format from settings; routes are thin
-/// placeholders until M3–M6 fill them in.
+/// App shell. Larm always uses the single dark Aurora glass theme; routes
+/// are thin wrappers around the feature pages.
 class LarmApp extends ConsumerWidget {
   const LarmApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(settingsControllerProvider);
-    final mode = switch (settings.themeMode) {
-      1 => ThemeMode.light,
-      2 => ThemeMode.dark,
-      _ => ThemeMode.system,
-    };
-    final family = familyFromIndex(settings.family);
     return MaterialApp(
       title: 'Larm',
       navigatorKey: larmNavigatorKey,
-      theme: buildLarmTheme(family: family, brightness: Brightness.light),
-      darkTheme: buildLarmTheme(family: family, brightness: Brightness.dark),
-      themeMode: mode,
+      theme: larmGlassTheme,
+      darkTheme: larmGlassTheme,
+      themeMode: ThemeMode.dark,
       home: const DashboardPage(),
       onGenerateRoute: (routeSettings) {
         Map<String, Object?>? triggerArgs;
@@ -53,8 +44,7 @@ class LarmApp extends ConsumerWidget {
             }
             return MaterialPageRoute(
               settings: routeSettings,
-              builder: (_) =>
-                  EditorPage(alarmId: alarmId, timerId: timerId),
+              builder: (_) => EditorPage(alarmId: alarmId, timerId: timerId),
             );
           case '/trigger':
             final args = triggerArgs;

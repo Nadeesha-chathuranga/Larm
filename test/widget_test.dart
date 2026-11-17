@@ -69,7 +69,7 @@ Future<ProviderScope> dashboardScope({
 Alarm testAlarm({String id = 'a1', bool enabled = true}) => Alarm(
       id: id,
       title: 'Morning $id',
-      isUtc: false,
+      isUtc: true,
       hour: 8,
       minute: 0,
       repeat: AlarmRepeat.daily,

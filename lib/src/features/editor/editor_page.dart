@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import 'package:vibration/vibration.dart';
@@ -7,6 +8,7 @@ import 'package:vibration/vibration.dart';
 import '../../core/audio/sounds.dart';
 import '../../core/haptics.dart';
 import '../../core/notifications/scheduler.dart';
+import '../../core/theme/tokens.dart';
 import '../../core/time/clock.dart';
 import '../../data/models/alarm.dart';
 import '../../data/models/larm_timer.dart';
@@ -28,7 +30,7 @@ const _dayFull = [
   'Thursday',
   'Friday',
   'Saturday',
-  'Sunday'
+  'Sunday',
 ];
 
 /// Alarm + timer editor. Creates new entries or edits existing ones
@@ -53,10 +55,9 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   String? _editTimerId;
 
   late final TextEditingController _title;
-  bool _isUtc = false;
   int _hour = 8;
   int _minute = 0;
-  DateTime _date = DateTime.now();
+  DateTime _date = DateTime.now().toUtc();
   int _repeat = AlarmRepeat.daily;
   List<bool> _days = List<bool>.filled(7, false);
   String _soundId = 'glass_chime';
@@ -90,10 +91,10 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     if (isKnownSound(settings.defaultSoundId)) {
       _soundId = settings.defaultSoundId;
     }
-    final now = DateTime.now();
+    final now = DateTime.now().toUtc();
     _hour = (now.hour + 1) % 24;
     _minute = 0;
-    _date = DateTime(now.year, now.month, now.day);
+    _date = DateTime.utc(now.year, now.month, now.day);
 
     if (alarmId != null) {
       final alarm = ref.read(alarmRepositoryProvider).getById(alarmId);
@@ -102,15 +103,15 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         _isTimer = false;
         _editAlarmId = alarm.id;
         _title.text = alarm.title;
-        _isUtc = alarm.isUtc;
         _hour = alarm.hour;
         _minute = alarm.minute;
         if (alarm.year != null && alarm.month != null && alarm.day != null) {
-          _date = DateTime(alarm.year!, alarm.month!, alarm.day!);
+          _date = DateTime.utc(alarm.year!, alarm.month!, alarm.day!);
         }
         _repeat = alarm.repeat;
         _days = List<bool>.from(
-            alarm.days.length == 7 ? alarm.days : List.filled(7, false));
+          alarm.days.length == 7 ? alarm.days : List.filled(7, false),
+        );
         if (isKnownSound(alarm.soundId)) _soundId = alarm.soundId;
         if (vibrationPatterns.any((p) => p.id == alarm.vibId)) {
           _vibId = alarm.vibId;
@@ -143,7 +144,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     return Alarm(
       id: id,
       title: _title.text.trim(),
-      isUtc: _isUtc,
+      isUtc: true,
       hour: _hour,
       minute: _minute,
       year: _repeat == AlarmRepeat.oneTime ? _date.year : null,
@@ -161,14 +162,12 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   Future<void> _saveAlarm() async {
     if (_repeat == AlarmRepeat.custom && _days.every((d) => !d)) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pick at least one day')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Pick at least one day')));
       return;
     }
     final repo = ref.read(alarmRepositoryProvider);
-    final existing =
-        _editAlarmId != null ? repo.getById(_editAlarmId!) : null;
+    final existing = _editAlarmId != null ? repo.getById(_editAlarmId!) : null;
     final alarm = _draftAlarm(existing?.id ?? _uuid.v4());
     if (existing != null) {
       // Preserve identity fields the form doesn't edit.
@@ -179,10 +178,12 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     await repo.upsert(alarm);
     SyncOutcome outcome = SyncOutcome.cancelled;
     try {
-      outcome = await ref.read(schedulerProvider).syncAlarm(
+      outcome = await ref
+          .read(schedulerProvider)
+          .syncAlarm(
             alarm,
             ref.read(settingsControllerProvider),
-            now: DateTime.now(),
+            now: DateTime.now().toUtc(),
           );
     } catch (_) {
       // Platform channels absent (tests/desktop): persistence already done.
@@ -200,14 +201,13 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     final total = _tHour * 3600 + _tMin * 60 + _tSec;
     if (total <= 0) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Set a duration first')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Set a duration first')));
       return;
     }
     final repo = ref.read(timerRepositoryProvider);
     final title = _title.text.trim().isEmpty ? 'Timer' : _title.text.trim();
-    final now = DateTime.now();
+    final now = DateTime.now().toUtc();
     LarmTimer? timer;
     if (_editTimerId != null && repo.getById(_editTimerId!) != null) {
       timer = repo.getById(_editTimerId!);
@@ -234,11 +234,9 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     }
     if (timer != null) {
       try {
-        await ref.read(schedulerProvider).syncTimer(
-              timer,
-              ref.read(settingsControllerProvider),
-              now: now,
-            );
+        await ref
+            .read(schedulerProvider)
+            .syncTimer(timer, ref.read(settingsControllerProvider), now: now);
       } catch (_) {
         // Persistence already done; scheduling is best effort here.
       }
@@ -249,32 +247,34 @@ class _EditorPageState extends ConsumerState<EditorPage> {
 
   Future<void> _deleteExisting() async {
     if (_editAlarmId != null) {
-      final alarm =
-          ref.read(alarmRepositoryProvider).getById(_editAlarmId!);
+      final alarm = ref.read(alarmRepositoryProvider).getById(_editAlarmId!);
       await ref.read(alarmRepositoryProvider).delete(_editAlarmId!);
       if (alarm != null) {
         try {
-          await ref.read(schedulerProvider).syncAlarm(
+          await ref
+              .read(schedulerProvider)
+              .syncAlarm(
                 alarm..enabled = false,
                 ref.read(settingsControllerProvider),
-                now: DateTime.now(),
+                now: DateTime.now().toUtc(),
               );
         } catch (_) {
           // Persistence already done.
         }
       }
     } else if (_editTimerId != null) {
-      final timer =
-          ref.read(timerRepositoryProvider).getById(_editTimerId!);
+      final timer = ref.read(timerRepositoryProvider).getById(_editTimerId!);
       await ref.read(timerRepositoryProvider).delete(_editTimerId!);
       if (timer != null) {
         try {
-          await ref.read(schedulerProvider).syncTimer(
+          await ref
+              .read(schedulerProvider)
+              .syncTimer(
                 timer
                   ..status = TimerStatus.idle
                   ..targetUtc = null,
                 ref.read(settingsControllerProvider),
-                now: DateTime.now(),
+                now: DateTime.now().toUtc(),
               );
         } catch (_) {
           // Persistence already done.
@@ -301,15 +301,11 @@ class _EditorPageState extends ConsumerState<EditorPage> {
 
   String _previewText(Settings settings) {
     final draft = _draftAlarm('preview');
-    final next = nextOccurrence(draft, fromLocal: DateTime.now());
+    final next = nextOccurrence(draft, fromUtc: DateTime.now().toUtc());
     if (next == null) return 'Already passed — pick another time';
     final use24h = settings.timeFormat == 1;
-    final date = DateFormat('EEE, MMM d').format(next);
-    final main = '$date · ${fmtTime(next, use24h: use24h)}';
-    final equiv = _isUtc
-        ? 'Local ${fmtTime(next.toLocal(), use24h: use24h)}'
-        : 'UTC ${fmtTime(next.toUtc(), use24h: use24h)}';
-    return 'Fires $main ($equiv)';
+    final date = DateFormat('EEE, MMM d').format(next.toUtc());
+    return 'Fires $date · ${fmtTime(next, use24h: use24h)} UTC';
   }
 
   @override
@@ -325,7 +321,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
           if (!_creating)
             IconButton(
               tooltip: 'Delete',
-              icon: const Icon(Icons.delete_outline),
+              icon: const Icon(LucideIcons.trash2, color: LarmPalette.coral),
               onPressed: _deleteExisting,
             ),
         ],
@@ -388,62 +384,55 @@ class _EditorPageState extends ConsumerState<EditorPage> {
 
   List<Widget> _alarmForm(BuildContext context, Settings settings) {
     final scheme = Theme.of(context).colorScheme;
+    final utcToday = DateTime.now().toUtc();
     final dateItems = List<DateTime>.generate(
       90,
-      (i) {
-        final now = DateTime.now();
-        return DateTime(now.year, now.month, now.day + i);
-      },
+      (i) => DateTime.utc(utcToday.year, utcToday.month, utcToday.day + i),
     );
     var dateIndex = dateItems.indexWhere(
-      (d) => d.year == _date.year && d.month == _date.month && d.day == _date.day,
+      (d) =>
+          d.year == _date.year && d.month == _date.month && d.day == _date.day,
     );
     if (dateIndex < 0) dateIndex = 0;
-    final previewTime = _isUtc
-        ? DateTime.utc(_date.year, _date.month, _date.day, _hour, _minute)
-            .toLocal()
-        : DateTime(_date.year, _date.month, _date.day, _hour, _minute);
+    final previewTime = DateTime.utc(
+      _date.year,
+      _date.month,
+      _date.day,
+      _hour,
+      _minute,
+    );
 
     return [
-      _sectionLabel(context, 'Time zone'),
-      SegmentedButton<bool>(
-        segments: const [
-          ButtonSegment(value: false, label: Text('Local')),
-          ButtonSegment(value: true, label: Text('UTC')),
+      Row(
+        children: [
+          _sectionLabel(context, 'Time zone'),
+          const Spacer(),
+          const GlassPill(label: 'UTC', color: LarmPalette.cyan),
         ],
-        selected: {_isUtc},
-        onSelectionChanged: (selected) async {
-          await hapticTap();
-          setState(() => _isUtc = selected.first);
-        },
       ),
       const SizedBox(height: 4),
-      Text(
-        _isUtc
-            ? 'Fires at the UTC instant wherever you travel — for cross-region groups.'
-            : 'Follows the device timezone, DST included.',
-        style: Theme.of(context).textTheme.bodySmall,
+      const Text(
+        'This alarm fires at the UTC instant wherever you travel.',
+        style: TextStyle(color: LarmPalette.muted, fontSize: 12),
       ),
       const SizedBox(height: 8),
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              CustomPaint(
-                size: const Size.square(72),
-                painter: AnalogPainter(
-                  now: previewTime,
-                  tickColor: scheme.onSurface,
-                  handColor: scheme.primary,
-                  secondColor: scheme.primary,
-                  ringColor: scheme.primary,
-                ),
+      GlassCard(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            CustomPaint(
+              size: const Size.square(72),
+              painter: AnalogPainter(
+                now: previewTime,
+                tickColor: scheme.onSurface,
+                handColor: LarmPalette.violet,
+                secondColor: LarmPalette.mint,
+                ringColor: LarmPalette.cyan,
               ),
-              const SizedBox(width: 12),
-              Expanded(child: Text(_previewText(settings))),
-            ],
-          ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Text(_previewText(settings))),
+          ],
         ),
       ),
       _sectionLabel(context, 'Time'),
@@ -507,10 +496,13 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         ),
       ],
       _sectionLabel(context, 'Sound'),
-      Card(
+      GlassCard(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: ListTile(
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+          leading: const GlassIcon(
+            icon: LucideIcons.music2,
+            color: LarmPalette.pink,
+          ),
           title: Text(
             _soundLabel(_soundId),
             style: Theme.of(context).textTheme.titleMedium,
@@ -519,12 +511,14 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             _soundCategory(_soundId),
             style: Theme.of(context).textTheme.bodyMedium,
           ),
-          trailing: const Icon(Icons.chevron_right),
+          trailing: const Icon(LucideIcons.chevronRight),
           onTap: () async {
             await hapticTap();
             if (!context.mounted) return;
-            final picked =
-                await showSoundPickerSheet(context, currentId: _soundId);
+            final picked = await showSoundPickerSheet(
+              context,
+              currentId: _soundId,
+            );
             if (picked != null && mounted) {
               setState(() => _soundId = picked);
             }
@@ -597,17 +591,17 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       child: Text(
         text.toUpperCase(),
         style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.2,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.2,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }
 
-String _soundLabel(String id) => soundLabel(id);
+  String _soundLabel(String id) => soundLabel(id);
 
-String _soundCategory(String id) => soundCategory(id);
+  String _soundCategory(String id) => soundCategory(id);
 
   Widget _repeatChip(String label, int value) {
     return ChoiceChip(

@@ -38,13 +38,13 @@ abstract class AlarmBackend {
 class PluginBackend implements AlarmBackend {
   @override
   Future<void> schedule(ScheduledFire fire) => NotificationService.scheduleFire(
-        id: fire.id,
-        title: fire.title,
-        body: fire.body,
-        when: fire.when,
-        details: fire.details,
-        payload: fire.payload,
-      );
+    id: fire.id,
+    title: fire.title,
+    body: fire.body,
+    when: fire.when,
+    details: fire.details,
+    payload: fire.payload,
+  );
 
   @override
   Future<void> cancel(int id) => NotificationService.cancel(id);
@@ -52,7 +52,8 @@ class PluginBackend implements AlarmBackend {
 
 /// Riverpod access to the scheduler. Tests override the backend.
 final schedulerProvider = Provider<AlarmScheduler>(
-    (_) => AlarmScheduler(backend: PluginBackend()));
+  (_) => AlarmScheduler(backend: PluginBackend()),
+);
 
 /// Outcome of a sync, for UI banners and tests.
 enum SyncOutcome { scheduled, cancelled, expired }
@@ -74,7 +75,8 @@ class AlarmScheduler {
       _stableId('alarm:$alarmId');
 
   /// Stable 31-bit positive id for a timer-completion slot.
-  static int notificationIdForTimer(String timerId) => _stableId('timer:$timerId');
+  static int notificationIdForTimer(String timerId) =>
+      _stableId('timer:$timerId');
 
   static int _stableId(String key) {
     var hash = 0x811c9dc5;
@@ -96,15 +98,14 @@ class AlarmScheduler {
     required String entryId,
     required String payload,
     required String soundId,
-  }) =>
-      NotificationDetails(
-        android: alarmDetails(
-          overrideMode: overrideMode,
-          entryId: entryId,
-          payload: payload,
-          soundId: soundId,
-        ),
-      );
+  }) => NotificationDetails(
+    android: alarmDetails(
+      overrideMode: overrideMode,
+      entryId: entryId,
+      payload: payload,
+      soundId: soundId,
+    ),
+  );
 
   /// Cancels then (re)schedules an alarm's next occurrence. Call after every
   /// mutation, permission grant, and cold start (boot recovery).
@@ -116,21 +117,23 @@ class AlarmScheduler {
     final id = notificationIdForAlarm(alarm.id);
     await _backend.cancel(id);
     if (!alarm.enabled) return SyncOutcome.cancelled;
-    final next = nextOccurrence(alarm, fromLocal: now);
+    final next = nextOccurrence(alarm, fromUtc: now);
     if (next == null) return SyncOutcome.expired;
-    await _backend.schedule(ScheduledFire(
-      id: id,
-      title: alarm.title.isEmpty ? 'Alarm' : alarm.title,
-      body: _timeBody(next, settings),
-      when: next,
-      details: _details(
-        overrideMode: _override(settings),
-        entryId: alarm.id,
+    await _backend.schedule(
+      ScheduledFire(
+        id: id,
+        title: alarm.title.isEmpty ? 'Alarm' : alarm.title,
+        body: _timeBody(next, settings),
+        when: next,
+        details: _details(
+          overrideMode: _override(settings),
+          entryId: alarm.id,
+          payload: alarmPayload(alarm.id),
+          soundId: alarm.soundId,
+        ),
         payload: alarmPayload(alarm.id),
-        soundId: alarm.soundId,
       ),
-      payload: alarmPayload(alarm.id),
-    ));
+    );
     return SyncOutcome.scheduled;
   }
 
@@ -143,21 +146,25 @@ class AlarmScheduler {
     required int remaining,
   }) async {
     if (remaining <= 0) return;
-    final when = tz.TZDateTime.from(now, tz.local)
-        .add(Duration(minutes: settings.snoozeMin));
-    await _backend.schedule(ScheduledFire(
-      id: notificationIdForAlarm(alarm.id),
-      title: alarm.title.isEmpty ? 'Alarm' : alarm.title,
-      body: 'Snoozed · ${_timeBody(when, settings)}',
-      when: when,
-      details: _details(
-        overrideMode: _override(settings),
-        entryId: alarm.id,
+    final when = tz.TZDateTime.from(
+      now.toUtc(),
+      tz.UTC,
+    ).add(Duration(minutes: settings.snoozeMin));
+    await _backend.schedule(
+      ScheduledFire(
+        id: notificationIdForAlarm(alarm.id),
+        title: alarm.title.isEmpty ? 'Alarm' : alarm.title,
+        body: 'Snoozed · ${_timeBody(when, settings)}',
+        when: when,
+        details: _details(
+          overrideMode: _override(settings),
+          entryId: alarm.id,
+          payload: alarmPayload(alarm.id),
+          soundId: alarm.soundId,
+        ),
         payload: alarmPayload(alarm.id),
-        soundId: alarm.soundId,
       ),
-      payload: alarmPayload(alarm.id),
-    ));
+    );
   }
 
   /// Schedules a running timer's completion; cancels otherwise. This is what
@@ -174,20 +181,22 @@ class AlarmScheduler {
       return SyncOutcome.cancelled;
     }
     if (!target.toUtc().isAfter(now.toUtc())) return SyncOutcome.expired;
-    final when = tz.TZDateTime.from(target.toUtc(), tz.local);
-    await _backend.schedule(ScheduledFire(
-      id: id,
-      title: timer.title.isEmpty ? 'Timer' : timer.title,
-      body: 'Done',
-      when: when,
-      details: _details(
-        overrideMode: _override(settings),
-        entryId: timer.id,
+    final when = tz.TZDateTime.from(target.toUtc(), tz.UTC);
+    await _backend.schedule(
+      ScheduledFire(
+        id: id,
+        title: timer.title.isEmpty ? 'Timer' : timer.title,
+        body: 'Done',
+        when: when,
+        details: _details(
+          overrideMode: _override(settings),
+          entryId: timer.id,
+          payload: timerPayload(timer.id),
+          soundId: settings.defaultSoundId,
+        ),
         payload: timerPayload(timer.id),
-        soundId: settings.defaultSoundId,
       ),
-      payload: timerPayload(timer.id),
-    ));
+    );
     return SyncOutcome.scheduled;
   }
 

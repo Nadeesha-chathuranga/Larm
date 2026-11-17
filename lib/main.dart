@@ -1,12 +1,13 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 import 'src/app.dart';
 import 'src/core/notifications/scheduler.dart';
+import 'src/core/prefs.dart';
 import 'src/core/notifications/service.dart';
 import 'src/data/models/alarm.dart';
 import 'src/data/models/larm_timer.dart';
@@ -18,13 +19,11 @@ import 'src/data/repos/timer_repo.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Larm is UTC-only. Keep the timezone database loaded for the notification
+  // plugin, but pin the package's local zone to UTC so no code path can
+  // accidentally schedule against the device zone.
   tzdata.initializeTimeZones();
-  try {
-    final name = (await FlutterTimezone.getLocalTimezone()).identifier;
-    tz.setLocalLocation(tz.getLocation(name));
-  } catch (_) {
-    tz.setLocalLocation(tz.UTC);
-  }
+  tz.setLocalLocation(tz.UTC);
 
   await Hive.initFlutter();
   Hive
@@ -37,9 +36,11 @@ Future<void> main() async {
   final settingsBox = await Hive.openBox<Settings>('settings');
   final initialSettings = loadSettings(settingsBox);
 
+  await _migrateLegacyLocalAlarms(alarmBox);
+
   await NotificationService.init();
 
-  // M2: recompute every slot on cold start. Covers reboot (plugin restores
+  // Recompute every slot on cold start. Covers reboot (the plugin restores
   // its own schedules too), app update, and permission-revocation recovery.
   // Never crash boot for a scheduling failure.
   try {
@@ -47,10 +48,10 @@ Future<void> main() async {
       alarms: alarmBox.values.toList(),
       timers: timerBox.values.toList(),
       settings: initialSettings,
-      now: DateTime.now(),
+      now: DateTime.now().toUtc(),
     );
   } catch (_) {
-    // Scheduling is best-effort until permissions are granted (M3 explains).
+    // Scheduling is best-effort until permissions are granted.
   }
 
   runApp(
@@ -66,4 +67,23 @@ Future<void> main() async {
       child: const LarmApp(),
     ),
   );
+}
+
+/// Legacy Local alarms are turned off once on upgrade. They stay stored, but
+/// are never scheduled or shown as enabled; the dashboard explains the change.
+Future<void> _migrateLegacyLocalAlarms(Box<Alarm> alarmBox) async {
+  final prefs = await SharedPreferences.getInstance();
+  if (prefs.getBool(utcMigrationKey) == true) return;
+
+  var disabled = 0;
+  for (final alarm in alarmBox.values) {
+    if (alarm.isUtc || !alarm.enabled) continue;
+    alarm.enabled = false;
+    await alarm.save();
+    disabled++;
+  }
+  await prefs.setBool(utcMigrationKey, true);
+  if (disabled > 0) {
+    await prefs.setBool(legacyLocalDisabledKey, true);
+  }
 }

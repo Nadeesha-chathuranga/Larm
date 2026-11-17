@@ -158,7 +158,7 @@ void main() {
     });
   });
 
-  testWidgets('UTC toggle shows conversion preview',
+  testWidgets('editor shows UTC-only time zone copy',
       (WidgetTester tester) async {
     await tester.runAsync(() async {
       await tester.pumpWidget(
@@ -168,11 +168,12 @@ void main() {
 
       await tester.tap(find.byTooltip('New alarm or timer'));
       await spin(tester);
-      expect(find.textContaining('Local'), findsWidgets);
-
-      await tester.tap(find.text('UTC'));
-      await spin(tester, 4);
-      expect(find.textContaining('UTC'), findsWidgets);
+      expect(find.text('UTC'), findsWidgets);
+      expect(
+        find.textContaining('fires at the UTC instant wherever you travel'),
+        findsOneWidget,
+      );
+      expect(find.text('Local'), findsNothing);
     });
   });
 

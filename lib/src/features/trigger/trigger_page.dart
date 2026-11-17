@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:vibration/vibration.dart';
 
 import '../../core/haptics.dart';
 import '../../core/motion.dart';
+import '../../core/theme/tokens.dart';
 import '../../core/notifications/scheduler.dart';
 import '../../core/time/clock.dart';
 import '../../data/models/alarm.dart';
@@ -66,7 +68,8 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
       final rawRemaining = args['snoozeRemaining'];
       if (rawRemaining is int) remaining = rawRemaining;
     }
-    _remaining = widget.snoozeRemaining ??
+    _remaining =
+        widget.snoozeRemaining ??
         remaining ??
         ref.read(settingsControllerProvider).snoozeCount;
 
@@ -112,62 +115,60 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
   }
 
   Future<void> _stop() => _finish(() async {
-        final settings = ref.read(settingsControllerProvider);
-        final scheduler = ref.read(schedulerProvider);
-        final now = DateTime.now();
-        if (_isTimer) {
-          final timer = _timer;
-          if (timer == null) return;
-          timer
-            ..status = TimerStatus.done
-            ..remainingSec = 0
-            ..targetUtc = null;
-          await ref.read(timerRepositoryProvider).upsert(timer);
-          await scheduler.syncTimer(timer, settings, now: now);
-        } else {
-          final alarm = _alarm;
-          if (alarm == null) return;
-          if (alarm.repeat == AlarmRepeat.oneTime) {
-            await ref.read(alarmRepositoryProvider).toggle(alarm.id, false);
-            final updated =
-                ref.read(alarmRepositoryProvider).getById(alarm.id);
-            if (updated != null) {
-              await scheduler.syncAlarm(updated, settings, now: now);
-            }
-          } else {
-            // Repeating: stop this ring, schedule the next occurrence.
-            await scheduler.syncAlarm(alarm, settings, now: now);
-          }
+    final settings = ref.read(settingsControllerProvider);
+    final scheduler = ref.read(schedulerProvider);
+    final now = DateTime.now().toUtc();
+    if (_isTimer) {
+      final timer = _timer;
+      if (timer == null) return;
+      timer
+        ..status = TimerStatus.done
+        ..remainingSec = 0
+        ..targetUtc = null;
+      await ref.read(timerRepositoryProvider).upsert(timer);
+      await scheduler.syncTimer(timer, settings, now: now);
+    } else {
+      final alarm = _alarm;
+      if (alarm == null) return;
+      if (alarm.repeat == AlarmRepeat.oneTime) {
+        await ref.read(alarmRepositoryProvider).toggle(alarm.id, false);
+        final updated = ref.read(alarmRepositoryProvider).getById(alarm.id);
+        if (updated != null) {
+          await scheduler.syncAlarm(updated, settings, now: now);
         }
-      });
+      } else {
+        // Repeating: stop this ring, schedule the next occurrence.
+        await scheduler.syncAlarm(alarm, settings, now: now);
+      }
+    }
+  });
 
   Future<void> _snooze() => _finish(() async {
-        if (_remaining <= 0) return;
-        final settings = ref.read(settingsControllerProvider);
-        final scheduler = ref.read(schedulerProvider);
-        final now = DateTime.now();
-        if (_isTimer) {
-          final timer = _timer;
-          if (timer == null) return;
-          timer
-            ..status = TimerStatus.running
-            ..targetUtc =
-                now.toUtc().add(Duration(minutes: settings.snoozeMin))
-            ..remainingSec = settings.snoozeMin * 60
-            ..enabled = true;
-          await ref.read(timerRepositoryProvider).upsert(timer);
-          await scheduler.syncTimer(timer, settings, now: now);
-        } else {
-          final alarm = _alarm;
-          if (alarm == null) return;
-          await scheduler.snoozeAlarm(
-            alarm,
-            settings,
-            now: now,
-            remaining: _remaining,
-          );
-        }
-      });
+    if (_remaining <= 0) return;
+    final settings = ref.read(settingsControllerProvider);
+    final scheduler = ref.read(schedulerProvider);
+    final now = DateTime.now().toUtc();
+    if (_isTimer) {
+      final timer = _timer;
+      if (timer == null) return;
+      timer
+        ..status = TimerStatus.running
+        ..targetUtc = now.toUtc().add(Duration(minutes: settings.snoozeMin))
+        ..remainingSec = settings.snoozeMin * 60
+        ..enabled = true;
+      await ref.read(timerRepositoryProvider).upsert(timer);
+      await scheduler.syncTimer(timer, settings, now: now);
+    } else {
+      final alarm = _alarm;
+      if (alarm == null) return;
+      await scheduler.snoozeAlarm(
+        alarm,
+        settings,
+        now: now,
+        remaining: _remaining,
+      );
+    }
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -182,13 +183,13 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
     final title = missing
         ? 'Gone'
         : _isTimer
-            ? (timer!.title.isEmpty ? 'Timer' : timer.title)
-            : (alarm!.title.isEmpty ? 'Alarm' : alarm.title);
+        ? (timer!.title.isEmpty ? 'Timer' : timer.title)
+        : (alarm!.title.isEmpty ? 'Alarm' : alarm.title);
     final timeLabel = missing
         ? ''
         : _isTimer
-            ? 'Done'
-            : fmtTime(DateTime.now(), use24h: use24h);
+        ? 'Done'
+        : '${fmtTime(DateTime.now().toUtc(), use24h: use24h)} UTC';
 
     return PopScope(
       canPop: true,
@@ -200,98 +201,101 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(32),
             child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      PulseRings(size: 240, color: scheme.primary),
-                      Icon(
-                        Icons.notifications_active,
-                        size: 80,
-                        color: scheme.primary,
-                      )
-                          .animate()
-                          .scale(duration: entrance)
-                          .fadeIn(duration: entrance),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    title,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineLarge,
-                  )
-                      .animate()
-                      .fadeIn(duration: entrance)
-                      .scale(duration: entrance),
-                  if (timeLabel.isNotEmpty) ...[
-                    const SizedBox(height: 8),
+              child: GlassCard(
+                padding: const EdgeInsets.all(28),
+                tint: LarmPalette.glassStrong,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        PulseRings(size: 240, color: LarmPalette.violet),
+                        Icon(
+                              LucideIcons.bellRing,
+                              size: 80,
+                              color: LarmPalette.violet,
+                            )
+                            .animate()
+                            .scale(duration: entrance)
+                            .fadeIn(duration: entrance),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
                     Text(
-                      timeLabel,
-                      style: Theme.of(context)
-                          .textTheme
-                          .displayMedium
-                          ?.copyWith(fontFeatures: _tabular),
-                    ).animate().fadeIn(duration: entrance),
-                  ],
-                  if (missing) ...[
-                    const SizedBox(height: 8),
-                    const Text('This alarm no longer exists.'),
-                  ],
-                  const SizedBox(height: 32),
-                  if (!missing) ...[
-                    if (_remaining > 0)
-                      Text('$_remaining snooze${_remaining == 1 ? '' : 's'} left',
-                          style: Theme.of(context).textTheme.bodyMedium),
-                    if (_remaining <= 0)
-                      Text('No snoozes left',
-                          style: Theme.of(context).textTheme.bodyMedium),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.tonal(
-                        style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(60),
-                          textStyle:
-                              Theme.of(context).textTheme.titleLarge,
+                          title,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.headlineLarge,
+                        )
+                        .animate()
+                        .fadeIn(duration: entrance)
+                        .scale(duration: entrance),
+                    if (timeLabel.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        timeLabel,
+                        style: Theme.of(context).textTheme.displayMedium
+                            ?.copyWith(fontFeatures: _tabular),
+                      ).animate().fadeIn(duration: entrance),
+                    ],
+                    if (missing) ...[
+                      const SizedBox(height: 8),
+                      const Text('This alarm no longer exists.'),
+                    ],
+                    const SizedBox(height: 32),
+                    if (!missing) ...[
+                      if (_remaining > 0)
+                        Text(
+                          '$_remaining snooze${_remaining == 1 ? '' : 's'} left',
+                          style: Theme.of(context).textTheme.bodyMedium,
                         ),
-                        onPressed: _remaining > 0
-                            ? () async {
-                                await hapticTap();
-                                await _snooze();
-                              }
-                            : null,
-                        child: Text(
-                            'Snooze ${settings.snoozeMin}m'),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: scheme.error,
-                          foregroundColor: scheme.onError,
-                          minimumSize: const Size.fromHeight(60),
-                          textStyle:
-                              Theme.of(context).textTheme.titleLarge,
+                      if (_remaining <= 0)
+                        Text(
+                          'No snoozes left',
+                          style: Theme.of(context).textTheme.bodyMedium,
                         ),
-                        onPressed: () async {
-                          await hapticConfirm();
-                          await _stop();
-                        },
-                        child: const Text('Stop'),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.tonal(
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(60),
+                            textStyle: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          onPressed: _remaining > 0
+                              ? () async {
+                                  await hapticTap();
+                                  await _snooze();
+                                }
+                              : null,
+                          child: Text('Snooze ${settings.snoozeMin}m'),
+                        ),
                       ),
-                    ),
-                  ] else ...[
-                    FilledButton(
-                      onPressed: () => Navigator.maybePop(context),
-                      child: const Text('Close'),
-                    ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: scheme.error,
+                            foregroundColor: scheme.onError,
+                            minimumSize: const Size.fromHeight(60),
+                            textStyle: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          onPressed: () async {
+                            await hapticConfirm();
+                            await _stop();
+                          },
+                          child: const Text('Stop'),
+                        ),
+                      ),
+                    ] else ...[
+                      FilledButton(
+                        onPressed: () => Navigator.maybePop(context),
+                        child: const Text('Close'),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),

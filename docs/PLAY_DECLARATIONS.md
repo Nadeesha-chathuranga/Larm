@@ -27,8 +27,10 @@
 ## 3. Data safety section
 
 * Data collected: **none**. No accounts, no network calls, no analytics.
-  Alarms/timers/settings live in on-device Hive boxes; tones are bundled
-  assets; time-zone lookup is on-device.
+  Alarms/timers/settings live in on-device Hive boxes; all 22 tones are
+  bundled, royalty-free assets. Alerts are scheduled in UTC using the bundled
+  timezone database for notifications only — no device location or network
+  lookup is used.
 * Permissions rationale (user-facing, for the store listing):
   * Exact alarms — fire at the set time.
   * Full-screen intent — show the ringing screen over lock.

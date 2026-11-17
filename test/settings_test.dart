@@ -1,14 +1,11 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 
 import 'package:larm/src/core/audio/sounds.dart';
 import 'package:larm/src/core/notifications/channels.dart';
-import 'package:larm/src/core/theme/family.dart';
-import 'package:larm/src/core/theme/tokens.dart';
 import 'package:larm/src/data/repos/settings_repo.dart';
 import 'widget_test.dart' show dashboardScope;
 
@@ -80,16 +77,15 @@ void main() {
       );
     });
 
-    test('v2 set has follow + 12 tones + override with bypass', () {
+    test('v2 set has follow + 22 tones + override with bypass', () {
       final channels = v2Channels();
-      expect(channels, hasLength(14));
-      final override =
-          channels.singleWhere((c) => c.id == larmOverrideV2);
+      expect(channels, hasLength(24));
+      final override = channels.singleWhere((c) => c.id == larmOverrideV2);
       expect(override.bypassDnd, isTrue);
       expect(override.importance, isNotNull);
       final tones =
           channels.where((c) => c.id.startsWith('larm_tone_')).toList();
-      expect(tones, hasLength(12));
+      expect(tones, hasLength(22));
       for (final tone in tones) {
         expect(tone.sound, isNotNull);
       }
@@ -127,34 +123,23 @@ void main() {
         alarmSounds.where((s) => s.category == 'Ambient').length,
         greaterThanOrEqualTo(4),
       );
-    });
-  });
-
-  group('themes', () {
-    test('all families build light and dark schemes', () {
-      for (final family in LarmThemeFamily.values) {
-        final light = buildLarmTheme(
-            family: family, brightness: Brightness.light);
-        final dark = buildLarmTheme(
-            family: family, brightness: Brightness.dark);
-        expect(light.colorScheme.brightness, Brightness.light);
-        expect(dark.colorScheme.brightness, Brightness.dark);
-        expect(light.colorScheme.primary,
-            isNot(dark.colorScheme.primary));
-      }
-    });
-
-    test('cards stand off the background in every family and mode', () {
-      for (final family in LarmThemeFamily.values) {
-        for (final brightness in [Brightness.light, Brightness.dark]) {
-          final theme = buildLarmTheme(
-              family: family, brightness: brightness);
-          expect(
-            theme.cardTheme.color,
-            isNot(theme.scaffoldBackgroundColor),
-            reason: '$family $brightness: card blends into background',
-          );
-        }
+      // Ten original royalty-free tones in their own first-shown category.
+      final popular = alarmSounds.where((s) => s.category == 'Popular').toList();
+      expect(popular, hasLength(10));
+      for (final id in [
+        'classic_chime',
+        'digital_clock',
+        'morning_bell',
+        'retro_beep',
+        'marimba_wake',
+        'radar_sweep',
+        'harp_arpeggio',
+        'solar_burst',
+        'soft_piano',
+        'cosmic_pulse',
+      ]) {
+        expect(popular.map((s) => s.id), contains(id));
+        expect(isKnownSound(id), isTrue);
       }
     });
   });
@@ -213,10 +198,6 @@ void main() {
       await tapVisible(tester, find.text('Always override'));
       await spin(tester, 4);
       expect(container.read(settingsControllerProvider).soundMode, 1);
-
-      await tapVisible(tester, find.text('Ember Dusk'));
-      await spin(tester, 4);
-      expect(container.read(settingsControllerProvider).family, 4);
 
       await tapVisible(tester, find.text('24-hour'));
       await spin(tester, 4);

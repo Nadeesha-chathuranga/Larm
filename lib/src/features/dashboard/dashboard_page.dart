@@ -2,13 +2,16 @@ import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../core/haptics.dart';
 import '../../core/nav.dart';
-import '../../core/notifications/background_handler.dart'
-    show parseFirePayload;
+import '../../core/prefs.dart';
+import '../../core/theme/tokens.dart';
+import '../../core/notifications/background_handler.dart' show parseFirePayload;
 import '../../core/notifications/scheduler.dart';
 import '../../core/notifications/service.dart';
 import '../../core/time/clock.dart';
@@ -63,9 +66,9 @@ class DashboardPage extends ConsumerStatefulWidget {
 }
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
-  bool _utcPrimary = false;
   bool? _exactOk;
   bool _launchChecked = false;
+  bool _legacyNoticeChecked = false;
 
   @override
   void initState() {
@@ -80,6 +83,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     if (_launchChecked) return;
     _launchChecked = true;
     _openLaunchFire();
+    _checkLegacyNotice();
   }
 
   Future<void> _openLaunchFire() async {
@@ -87,8 +91,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       final details = await NotificationService.plugin
           .getNotificationAppLaunchDetails();
       if (details?.didNotificationLaunchApp != true) return;
-      final fire =
-          parseFirePayload(details?.notificationResponse?.payload);
+      final fire = parseFirePayload(details?.notificationResponse?.payload);
       if (fire == null || !mounted) return;
       larmNavigatorKey.currentState?.pushNamed(
         '/trigger',
@@ -109,6 +112,37 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       ok = true;
     }
     if (mounted) setState(() => _exactOk = ok);
+  }
+
+  /// One-time explanation after the UTC-only migration disabled old Local
+  /// alarms. Never blocks the UI and is only shown once.
+  Future<void> _checkLegacyNotice() async {
+    if (_legacyNoticeChecked || !mounted) return;
+    _legacyNoticeChecked = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(legacyLocalDisabledKey) != true) return;
+      await prefs.remove(legacyLocalDisabledKey);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('UTC-only update'),
+          content: const Text(
+            'Larm now uses UTC time everywhere. Old Local alarms were turned '
+            'off. Recreate them with the UTC times you want.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Got it'),
+            ),
+          ],
+        ),
+      );
+    } catch (_) {
+      // Best effort; absence of the notice never affects alarm behavior.
+    }
   }
 
   Future<void> _enableAlarms() async {
@@ -159,7 +193,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         alarms: alarms,
         timers: timers,
         settings: settings,
-        now: DateTime.now(),
+        now: DateTime.now().toUtc(),
       );
     } catch (_) {
       // Offline from platform channels (tests/desktop): ignore.
@@ -177,10 +211,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     try {
       final updated = ref.read(alarmRepositoryProvider).getById(alarm.id);
       if (updated != null) {
-        outcome = await ref.read(schedulerProvider).syncAlarm(
+        outcome = await ref
+            .read(schedulerProvider)
+            .syncAlarm(
               updated,
               ref.read(settingsControllerProvider),
-              now: DateTime.now(),
+              now: DateTime.now().toUtc(),
             );
       }
     } catch (_) {
@@ -188,9 +224,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     }
     if (!mounted) return;
     if (outcome == SyncOutcome.expired) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('That time already passed')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('That time already passed')));
     }
   }
 
@@ -198,10 +234,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final wasEnabled = alarm.enabled;
     await ref.read(alarmRepositoryProvider).delete(alarm.id);
     try {
-      await ref.read(schedulerProvider).syncAlarm(
+      await ref
+          .read(schedulerProvider)
+          .syncAlarm(
             alarm..enabled = false,
             ref.read(settingsControllerProvider),
-            now: DateTime.now(),
+            now: DateTime.now().toUtc(),
           );
     } catch (_) {
       // Persistence already done; scheduling is best effort here.
@@ -230,12 +268,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final prevEnabled = timer.enabled;
     await ref.read(timerRepositoryProvider).delete(timer.id);
     try {
-      await ref.read(schedulerProvider).syncTimer(
+      await ref
+          .read(schedulerProvider)
+          .syncTimer(
             timer
               ..status = TimerStatus.idle
               ..targetUtc = null,
             ref.read(settingsControllerProvider),
-            now: DateTime.now(),
+            now: DateTime.now().toUtc(),
           );
     } catch (_) {
       // Persistence already done; scheduling is best effort here.
@@ -261,16 +301,16 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     );
   }
 
-  Future<void> _timerControl(
-    Future<LarmTimer?> Function() action,
-  ) async {
+  Future<void> _timerControl(Future<LarmTimer?> Function() action) async {
     final updated = await action();
     if (updated == null) return;
     try {
-      await ref.read(schedulerProvider).syncTimer(
+      await ref
+          .read(schedulerProvider)
+          .syncTimer(
             updated,
             ref.read(settingsControllerProvider),
-            now: DateTime.now(),
+            now: DateTime.now().toUtc(),
           );
     } catch (_) {
       // Persistence already done; scheduling is best effort here.
@@ -290,7 +330,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         actions: [
           IconButton(
             tooltip: 'Settings',
-            icon: const Icon(Icons.settings_outlined),
+            icon: const Icon(LucideIcons.settings2),
             onPressed: () => Navigator.pushNamed(context, '/settings'),
           ),
         ],
@@ -298,7 +338,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       body: StreamBuilder<int>(
         stream: Stream.periodic(const Duration(seconds: 1), (i) => i),
         builder: (context, _) {
-          final now = DateTime.now();
+          final now = DateTime.now().toUtc();
           return ValueListenableBuilder(
             valueListenable: alarmRepo.listenable(),
             builder: (context, alarmBox, child) {
@@ -322,7 +362,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             await hapticTap();
             open();
           },
-          child: const Icon(Icons.add),
+          child: const Icon(LucideIcons.plus),
         ),
       ),
     );
@@ -333,24 +373,21 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final timerRepo = ref.read(timerRepositoryProvider);
     final timers = timerRepo.all();
 
+    final utc = now.toUtc();
+
     tz.TZDateTime? nearest;
     for (final alarm in alarms) {
       if (!alarm.enabled) continue;
-      final next = nextOccurrence(alarm, fromLocal: now);
+      final next = nextOccurrence(alarm, fromUtc: utc);
       if (next == null) continue;
       if (nearest == null || next.isBefore(nearest)) nearest = next;
     }
     final nearestFinal = nearest;
 
-    final local = now;
-    final utc = now.toUtc();
-    final primaryDt = _utcPrimary ? utc : local;
-    final secondaryDt = _utcPrimary ? local : utc;
-
     double? ring;
     String? nextLabel;
     if (nearestFinal != null) {
-      final remaining = nearestFinal.difference(now);
+      final remaining = nearestFinal.difference(utc);
       const window = Duration(hours: 12);
       ring = remaining <= Duration.zero
           ? 1.0
@@ -365,23 +402,22 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       padding: const EdgeInsets.all(16),
       children: [
         HybridHero(
-          dateLabel: DateFormat('EEE, MMM d').format(now),
-          primaryTime: _clockString(primaryDt, use24h: use24h),
-          primaryLabel: _utcPrimary ? 'UTC' : 'Local',
-          secondaryTime: _clockString(secondaryDt, use24h: use24h),
-          secondaryLabel: _utcPrimary ? 'Local' : 'UTC',
-          onSwap: () async {
-            await hapticTap();
-            setState(() => _utcPrimary = !_utcPrimary);
-          },
+          dateLabel: DateFormat('EEE, MMM d').format(utc),
+          primaryTime: _clockString(utc, use24h: use24h),
+          primaryLabel: 'UTC',
           ringProgress: ring,
           nextLabel: nextLabel,
         ),
         if (showBanner) ...[
           const SizedBox(height: 12),
-          Card(
+          GlassCard(
+            tint: LarmPalette.coral.withValues(alpha: 0.12),
             child: ListTile(
-              leading: const Icon(Icons.alarm_off_outlined),
+              leading: const GlassIcon(
+                icon: LucideIcons.bellOff,
+                color: LarmPalette.coral,
+                boxSize: 40,
+              ),
               title: const Text('Exact alarms off'),
               subtitle: const Text('Alarms may arrive late.'),
               trailing: FilledButton(
@@ -397,10 +433,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             padding: const EdgeInsets.symmetric(vertical: 48),
             child: Column(
               children: [
-                Icon(
-                  Icons.alarm_off_outlined,
-                  size: 64,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                GlassIcon(
+                  icon: LucideIcons.alarmClockOff,
+                  color: LarmPalette.violet,
+                  size: 34,
+                  boxSize: 76,
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -413,63 +450,63 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         if (alarms.isNotEmpty) ...[
           _listHeader(context, 'Alarms', alarms.length),
           for (final alarm in alarms)
-          Dismissible(
-            key: ValueKey('alarm-${alarm.id}'),
-            direction: DismissDirection.endToStart,
-            background: Container(
-              alignment: Alignment.centerRight,
-              padding: const EdgeInsets.only(right: 20),
-              child: const Icon(Icons.delete_outline),
-            ),
-            onDismissed: (_) => _deleteAlarm(alarm),
-            child: Card(
-              child: AlarmTile(
-                alarm: alarm,
-                subtitle: _alarmSubtitle(alarm, now, use24h),
-                onToggle: (on) => _toggleAlarm(alarm, on),
-                onTap: () => Navigator.pushNamed(
-                  context,
-                  '/editor',
-                  arguments: {'alarmId': alarm.id},
+            Dismissible(
+              key: ValueKey('alarm-${alarm.id}'),
+              direction: DismissDirection.endToStart,
+              background: Container(
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.only(right: 20),
+                child: const Icon(LucideIcons.trash2, color: LarmPalette.coral),
+              ),
+              onDismissed: (_) => _deleteAlarm(alarm),
+              child: GlassCard(
+                padding: EdgeInsets.zero,
+                child: AlarmTile(
+                  alarm: alarm,
+                  subtitle: _alarmSubtitle(alarm, utc, use24h),
+                  onToggle: (on) => _toggleAlarm(alarm, on),
+                  onTap: () => Navigator.pushNamed(
+                    context,
+                    '/editor',
+                    arguments: {'alarmId': alarm.id},
+                  ),
                 ),
               ),
             ),
-          ),
         ],
         if (timers.isNotEmpty) ...[
           _listHeader(context, 'Timers', timers.length),
           for (final timer in timers)
-          Dismissible(
-            key: ValueKey('timer-${timer.id}'),
-            direction: DismissDirection.endToStart,
-            background: Container(
-              alignment: Alignment.centerRight,
-              padding: const EdgeInsets.only(right: 20),
-              child: const Icon(Icons.delete_outline),
-            ),
-            onDismissed: (_) => _deleteTimer(timer),
-            child: Card(
-              child: TimerTile(
-                title: timer.title,
-                remainingLabel: _remainingLabel(timer, now),
-                status: timer.status,
-                onPause: () => _timerControl(
-                  () => timerRepo.pause(timer.id, DateTime.now()),
-                ),
-                onResume: () => _timerControl(
-                  () => timerRepo.start(timer.id, DateTime.now()),
-                ),
-                onReset: () => _timerControl(
-                  () => timerRepo.reset(timer.id),
-                ),
-                onTap: () => Navigator.pushNamed(
-                  context,
-                  '/editor',
-                  arguments: {'timerId': timer.id},
+            Dismissible(
+              key: ValueKey('timer-${timer.id}'),
+              direction: DismissDirection.endToStart,
+              background: Container(
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.only(right: 20),
+                child: const Icon(LucideIcons.trash2, color: LarmPalette.coral),
+              ),
+              onDismissed: (_) => _deleteTimer(timer),
+              child: GlassCard(
+                padding: EdgeInsets.zero,
+                child: TimerTile(
+                  title: timer.title,
+                  remainingLabel: _remainingLabel(timer, utc),
+                  status: timer.status,
+                  onPause: () => _timerControl(
+                    () => timerRepo.pause(timer.id, DateTime.now().toUtc()),
+                  ),
+                  onResume: () => _timerControl(
+                    () => timerRepo.start(timer.id, DateTime.now().toUtc()),
+                  ),
+                  onReset: () => _timerControl(() => timerRepo.reset(timer.id)),
+                  onTap: () => Navigator.pushNamed(
+                    context,
+                    '/editor',
+                    arguments: {'timerId': timer.id},
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ],
     );
@@ -481,16 +518,15 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
       child: Text(
         '$title · $count',
-        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+        style: Theme.of(context).textTheme.titleMedium
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
       ),
     );
   }
 
-  String _alarmSubtitle(Alarm alarm, DateTime now, bool use24h) {
+  String _alarmSubtitle(Alarm alarm, DateTime utc, bool use24h) {
     if (!alarm.enabled) return '${repeatLabel(alarm)} · Off';
-    final next = nextOccurrence(alarm, fromLocal: now);
+    final next = nextOccurrence(alarm, fromUtc: utc);
     if (next == null) return '${repeatLabel(alarm)} · Passed';
     return '${fmtTime(next, use24h: use24h)} · ${repeatLabel(alarm)}';
   }
