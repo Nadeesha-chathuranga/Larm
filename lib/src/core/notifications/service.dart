@@ -18,6 +18,10 @@ class NotificationService {
 
   static bool _ready = false;
 
+  /// Dedicated slot for the silent "alarm armed" status notice. Kept separate
+  /// from fire ids so cancelling a fire never hides the armed indicator.
+  static const int armedNotificationId = 0x4C41524D;
+
   /// Whether [init] completed without throwing.
   static bool get isReady => _ready;
 
@@ -44,14 +48,25 @@ class NotificationService {
       }
     }
     for (final channel in v2Channels()) {
-      await androidImpl?.createNotificationChannel(channel);
+      try {
+        await androidImpl?.createNotificationChannel(channel);
+      } catch (_) {
+        // One bad tone channel must not abort scheduling or the armed notice.
+      }
     }
     _ready = true;
   }
 
-  static AndroidFlutterLocalNotificationsPlugin? get _android =>
-      plugin.resolvePlatformSpecificImplementation<
+  static AndroidFlutterLocalNotificationsPlugin? get _android {
+    try {
+      return plugin.resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
+    } catch (_) {
+      // Platform channels are absent in tests/desktop; let callers treat this
+      // as "no Android permission flow needed" instead of crashing startup.
+      return null;
+    }
+  }
 
   /// POST_NOTIFICATIONS (Android 13+; no-op below). Call in context when the
   /// user enables their first alarm.
@@ -59,9 +74,13 @@ class NotificationService {
       _android?.requestNotificationsPermission() ?? Future.value(true);
 
   /// Exact-alarm status. False means schedules fall back to inexact and the
-  /// UI must show the "may delay" banner.
-  static Future<bool> canScheduleExact() async =>
-      (await _android?.canScheduleExactNotifications()) ?? false;
+  /// UI must show the "may delay" banner. No Android plugin (tests/desktop)
+  /// is treated as available so the UI doesn't show a false warning.
+  static Future<bool> canScheduleExact() async {
+    final android = _android;
+    if (android == null) return true;
+    return (await android.canScheduleExactNotifications()) ?? false;
+  }
 
   /// Deep-links to the system exact-alarm settings (Android 14+ denies by
   /// default). Returns the grant result where the platform reports it.
@@ -73,6 +92,24 @@ class NotificationService {
   /// "unchanged" and degrade to heads-up + in-app page when denied.
   static Future<bool?> requestFullScreenIntent() =>
       _android?.requestFullScreenIntentPermission() ?? Future.value(true);
+
+  /// Requests notification, exact-alarm and full-screen permissions in the
+  /// product order. Returns false when a fire still cannot be shown reliably,
+  /// so callers can fall back to inexact scheduling and tell the user.
+  static Future<bool> ensureFirePermissions() async {
+    final android = _android;
+    if (android == null) return true;
+    try {
+      final notifications = await requestPostNotifications() ?? true;
+      if (!await canScheduleExact()) {
+        await requestExactAlarms();
+      }
+      await requestFullScreenIntent();
+      return notifications && await canScheduleExact();
+    } catch (_) {
+      return false;
+    }
+  }
 
   /// DND-bypass channel support. Request only when the user opts into
   /// `alwaysOverride`; creating a `bypassDnd` channel without access silently
@@ -92,16 +129,65 @@ class NotificationService {
     required tz.TZDateTime when,
     required NotificationDetails details,
     String? payload,
-  }) {
-    return plugin.zonedSchedule(
-      id: id,
-      title: title,
-      body: body,
-      scheduledDate: when,
-      notificationDetails: details,
-      androidScheduleMode: AndroidScheduleMode.alarmClock,
-      payload: payload,
-    );
+  }) async {
+    // `alarmClock` throws outright when exact-alarm permission is denied.
+    // Falling back keeps the alarm firing (possibly a little late) instead of
+    // silently losing the only scheduled slot.
+    bool exact;
+    try {
+      exact = await canScheduleExact();
+    } catch (_) {
+      exact = false;
+    }
+    Future<void> schedule(AndroidScheduleMode mode) => plugin.zonedSchedule(
+          id: id,
+          title: title,
+          body: body,
+          scheduledDate: when,
+          notificationDetails: details,
+          androidScheduleMode: mode,
+          payload: payload,
+        );
+
+    if (!exact) {
+      await schedule(AndroidScheduleMode.inexactAllowWhileIdle);
+      return;
+    }
+    try {
+      await schedule(AndroidScheduleMode.alarmClock);
+    } catch (_) {
+      // Some OEMs reject alarmClock even when canScheduleExact() reports true.
+      // Retry rather than dropping the only scheduled slot.
+      await schedule(AndroidScheduleMode.inexactAllowWhileIdle);
+    }
+  }
+
+  /// Shows/updates the silent ongoing notice for the next armed fire.
+  /// Failures are swallowed: the alarm schedule itself is the source of truth.
+  static Future<void> showArmed({
+    required String title,
+    required String body,
+  }) async {
+    if (!_ready) return;
+    try {
+      await plugin.show(
+        id: armedNotificationId,
+        title: title,
+        body: body,
+        notificationDetails: NotificationDetails(android: armedDetails()),
+      );
+    } catch (_) {
+      // Status-only notification; never break a real schedule for this.
+    }
+  }
+
+  static Future<void> cancelArmed() async {
+    if (!_ready) return;
+    try {
+      await plugin.cancel(id: armedNotificationId);
+    } catch (_) {
+      // Best effort.
+    }
   }
 
   static Future<void> cancel(int id) => plugin.cancel(id: id);

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../../core/audio/sounds.dart';
@@ -10,6 +12,7 @@ import '../../core/audio/sounds.dart';
 /// bypass channel (tone sacrificed for guaranteed DND bypass).
 const String larmFollowV2 = 'larm_follow_v2';
 const String larmOverrideV2 = 'larm_override_v2';
+const String larmArmedV2 = 'larm_armed_v2';
 
 String toneChannelId(String soundId) => 'larm_tone_${soundId}_v2';
 
@@ -29,6 +32,15 @@ String channelFor({required bool overrideMode, required String soundId}) {
 
 /// Full set of v2 channels to create at startup.
 List<AndroidNotificationChannel> v2Channels() => [
+      const AndroidNotificationChannel(
+        larmArmedV2,
+        'Alarm status',
+        description: 'Silent ongoing notice showing the next armed alarm.',
+        importance: Importance.low,
+        playSound: false,
+        enableVibration: false,
+        showBadge: false,
+      ),
       const AndroidNotificationChannel(
         larmFollowV2,
         'Alarms',
@@ -65,7 +77,8 @@ String alarmPayload(String alarmId) => 'alarm:$alarmId';
 /// Notification tap payload for a timer completion.
 String timerPayload(String timerId) => 'timer:$timerId';
 
-/// Action ID for the Stop button on a ringing notification.
+/// Action ID for the Cancel button on a ringing notification. The id keeps
+/// its legacy `stop_` prefix so existing action routes stay stable.
 String stopActionId(String entryId) => 'stop_$entryId';
 
 /// Action ID for the Snooze button on a ringing notification.
@@ -75,17 +88,24 @@ String snoozeActionId(String entryId) => 'snooze_$entryId';
 ///
 /// [overrideMode] picks the DND-bypassing channel (requires notification
 /// policy access, requested when the user opts into override).
-/// [entryId] is the alarm/timer id, namespaced by [payload].
+/// [entryId] is the alarm/timer id, namespaced by [payload]. [vibrationId] is
+/// the global pattern from Settings, applied to every alarm and timer.
 AndroidNotificationDetails alarmDetails({
   required bool overrideMode,
   required String entryId,
   required String payload,
   required String soundId,
+  required String vibrationId,
 }) {
   final channelId =
       channelFor(overrideMode: overrideMode, soundId: soundId);
   final channelName =
       overrideMode ? 'Alarms (override)' : 'Alarms · $soundId';
+  final vibration = vibrationById(vibrationId);
+  final vibrationOff = vibration.id == 'off';
+  final vibrationPattern = vibration.pattern.isEmpty
+      ? Int64List.fromList([0, vibration.duration])
+      : Int64List.fromList(vibration.pattern);
   return AndroidNotificationDetails(
     channelId,
     channelName,
@@ -98,7 +118,8 @@ AndroidNotificationDetails alarmDetails({
     ongoing: true,
     autoCancel: false,
     playSound: true,
-    enableVibration: true,
+    enableVibration: !vibrationOff,
+    vibrationPattern: vibrationOff ? null : vibrationPattern,
     audioAttributesUsage: AudioAttributesUsage.alarm,
     actions: [
       AndroidNotificationAction(
@@ -108,9 +129,28 @@ AndroidNotificationDetails alarmDetails({
       ),
       AndroidNotificationAction(
         stopActionId(entryId),
-        'Stop',
+        'Cancel',
         showsUserInterface: true,
       ),
     ],
   );
 }
+
+/// Silent, ongoing status notification. This makes an armed alarm visible in
+/// the shade and survives the app being swiped away; it never sounds or steals
+/// the lock screen.
+AndroidNotificationDetails armedDetails() => const AndroidNotificationDetails(
+      larmArmedV2,
+      'Alarm status',
+      channelDescription: 'Silent ongoing notice showing the next armed alarm.',
+      importance: Importance.low,
+      priority: Priority.low,
+      category: AndroidNotificationCategory.status,
+      visibility: NotificationVisibility.public,
+      ongoing: true,
+      autoCancel: false,
+      onlyAlertOnce: true,
+      playSound: false,
+      enableVibration: false,
+      channelShowBadge: false,
+    );

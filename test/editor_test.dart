@@ -1,13 +1,16 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 
+import 'package:larm/src/data/models/alarm.dart';
 import 'package:larm/src/data/models/larm_timer.dart';
 import 'package:larm/src/data/repos/alarm_repo.dart';
+import 'package:larm/src/data/repos/settings_repo.dart';
 import 'package:larm/src/data/repos/timer_repo.dart';
+
 import 'widget_test.dart' show dashboardScope, testAlarm;
 
 /// Pumps [frames] real-time frames so container-transform and route
@@ -25,13 +28,12 @@ Future<void> spin(WidgetTester tester, [int frames = 8]) async {
 /// the tree), up to ~2s. Prevents matching editor text against the
 /// dashboard tile underneath mid-transition.
 Future<void> pumpUntilPopped(WidgetTester tester) async {
-  for (var i = 0;
-      i < 20 && find.byType(TextField).evaluate().isNotEmpty;
-      i++) {
+  for (var i = 0; i < 20 && find.byType(TextField).evaluate().isNotEmpty; i++) {
     await Future<void>.delayed(const Duration(milliseconds: 100));
     await tester.pump();
   }
 }
+
 /// Scrolls [finder] into view (long forms lazily build off-screen rows)
 /// and taps it. Drags from the far left edge so the centered wheel pickers
 /// never hijack the gesture; fake-zone pumps settle the scroll. Loops until
@@ -67,24 +69,20 @@ void main() {
       // Best effort only (see dashboard_test teardown note).
     }
     try {
-      await dir.delete(recursive: true).timeout(
-            const Duration(seconds: 10),
-          );
+      await dir.delete(recursive: true).timeout(const Duration(seconds: 10));
     } catch (_) {
       // Best effort only.
     }
   });
 
-  testWidgets('creates an alarm with defaults + title',
-      (WidgetTester tester) async {
+  testWidgets('creates an alarm with defaults + title', (
+    WidgetTester tester,
+  ) async {
     late ProviderContainer container;
     await tester.runAsync(() async {
-      await tester.pumpWidget(
-        await dashboardScope(dir: dir, suffix: 'create'),
-      );
+      await tester.pumpWidget(await dashboardScope(dir: dir, suffix: 'create'));
       await tester.pump();
-      container =
-          ProviderScope.containerOf(tester.element(find.text('Larm')));
+      container = ProviderScope.containerOf(tester.element(find.text('Larm')));
 
       await tester.tap(find.byTooltip('New alarm or timer'));
       await spin(tester);
@@ -106,12 +104,9 @@ void main() {
   testWidgets('creates and starts a timer', (WidgetTester tester) async {
     late ProviderContainer container;
     await tester.runAsync(() async {
-      await tester.pumpWidget(
-        await dashboardScope(dir: dir, suffix: 'timer'),
-      );
+      await tester.pumpWidget(await dashboardScope(dir: dir, suffix: 'timer'));
       await tester.pump();
-      container =
-          ProviderScope.containerOf(tester.element(find.text('Larm')));
+      container = ProviderScope.containerOf(tester.element(find.text('Larm')));
 
       await tester.tap(find.byTooltip('New alarm or timer'));
       await spin(tester);
@@ -133,8 +128,9 @@ void main() {
     expect(find.text('Pasta'), findsOneWidget);
   });
 
-  testWidgets('edits an existing alarm with prefilled title',
-      (WidgetTester tester) async {
+  testWidgets('edits an existing alarm with prefilled title', (
+    WidgetTester tester,
+  ) async {
     await tester.runAsync(() async {
       await tester.pumpWidget(
         await dashboardScope(
@@ -158,42 +154,90 @@ void main() {
     });
   });
 
-  testWidgets('editor shows UTC-only time zone copy',
-      (WidgetTester tester) async {
+  testWidgets('editor shows UTC-only time zone copy', (
+    WidgetTester tester,
+  ) async {
     await tester.runAsync(() async {
-      await tester.pumpWidget(
-        await dashboardScope(dir: dir, suffix: 'utc'),
-      );
+      await tester.pumpWidget(await dashboardScope(dir: dir, suffix: 'utc'));
       await tester.pump();
 
       await tester.tap(find.byTooltip('New alarm or timer'));
       await spin(tester);
-      expect(find.text('UTC'), findsWidgets);
+      expect(find.text('UTC'), findsNothing);
       expect(
         find.textContaining('fires at the UTC instant wherever you travel'),
         findsOneWidget,
       );
       expect(find.text('Local'), findsNothing);
+      expect(find.text('Repeat'), findsNothing);
+      expect(find.text('Sound'), findsNothing);
+      expect(find.text('Vibration'), findsNothing);
     });
   });
 
-  testWidgets('custom repeat requires a day', (WidgetTester tester) async {
+  testWidgets('calendar picks a one-time date', (WidgetTester tester) async {
+    late ProviderContainer container;
     await tester.runAsync(() async {
       await tester.pumpWidget(
-        await dashboardScope(dir: dir, suffix: 'custom'),
+        await dashboardScope(dir: dir, suffix: 'calendar'),
       );
       await tester.pump();
+      container = ProviderScope.containerOf(tester.element(find.text('Larm')));
 
       await tester.tap(find.byTooltip('New alarm or timer'));
       await spin(tester);
-      await tapVisible(tester, find.text('Custom'));
+
+      await tapVisible(
+        tester,
+        find.byKey(const ValueKey('date-picker-next-month')),
+      );
       await spin(tester, 4);
-      await tapVisible(tester, find.text('Save alarm'));
+      await tapVisible(
+        tester,
+        find.byKey(const ValueKey('date-picker-day-15')),
+      );
       await spin(tester, 4);
 
-      // Still on the editor: validation blocked the save.
-      expect(find.text('New alarm'), findsOneWidget);
-      expect(find.text('Pick at least one day'), findsOneWidget);
+      await tapVisible(tester, find.text('Save alarm'));
+      await spin(tester);
+      await pumpUntilPopped(tester);
     });
+
+    final alarms = container.read(alarmRepositoryProvider).all();
+    expect(alarms, hasLength(1));
+    final now = DateTime.now().toUtc();
+    final expected = DateTime.utc(now.year, now.month + 1, 15);
+    expect(alarms.single.year, expected.year);
+    expect(alarms.single.month, expected.month);
+    expect(alarms.single.day, expected.day);
+    expect(alarms.single.repeat, AlarmRepeat.oneTime);
+  });
+
+  testWidgets('new alarms use the global tone and vibration', (
+    WidgetTester tester,
+  ) async {
+    late ProviderContainer container;
+    await tester.runAsync(() async {
+      await tester.pumpWidget(await dashboardScope(dir: dir, suffix: 'global'));
+      await tester.pump();
+      container = ProviderScope.containerOf(tester.element(find.text('Larm')));
+      final controller = container.read(settingsControllerProvider.notifier);
+      await controller.updateDefaultSound('zen_bowl');
+      await controller.updateDefaultVibration('double');
+
+      await tester.tap(find.byTooltip('New alarm or timer'));
+      await spin(tester);
+      expect(find.text('Sound'), findsNothing);
+      expect(find.text('Vibration'), findsNothing);
+
+      await tapVisible(tester, find.text('Save alarm'));
+      await spin(tester);
+      await pumpUntilPopped(tester);
+    });
+
+    final alarms = container.read(alarmRepositoryProvider).all();
+    expect(alarms, hasLength(1));
+    expect(alarms.single.soundId, 'zen_bowl');
+    expect(alarms.single.vibId, 'double');
   });
 }

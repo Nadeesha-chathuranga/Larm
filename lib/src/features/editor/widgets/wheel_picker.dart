@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../core/haptics.dart';
 
@@ -24,7 +24,7 @@ class WheelPicker<T> extends StatefulWidget {
     required this.onSelected,
     required this.label,
     this.width = 96,
-    this.itemExtent = 56,
+    this.itemExtent = 68,
   });
 
   final List<T> items;
@@ -44,8 +44,7 @@ class _WheelPickerState<T> extends State<WheelPicker<T>> {
   @override
   void initState() {
     super.initState();
-    _controller =
-        FixedExtentScrollController(initialItem: widget.initialIndex);
+    _controller = FixedExtentScrollController(initialItem: widget.initialIndex);
   }
 
   @override
@@ -78,9 +77,8 @@ class _WheelPickerState<T> extends State<WheelPicker<T>> {
           builder: (context, index) => Center(
             child: Text(
               widget.label(widget.items[index]),
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: scheme.onSurface,
-                  ),
+              style: Theme.of(context).textTheme.headlineMedium
+                  ?.copyWith(color: scheme.onSurface),
             ),
           ),
         ),

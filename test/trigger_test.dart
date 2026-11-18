@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
@@ -33,6 +33,12 @@ class FakeBackend implements AlarmBackend {
   Future<void> cancel(int id) async {
     cancelled.add(id);
   }
+
+  @override
+  Future<void> updateArmed({required String title, required String body}) async {}
+
+  @override
+  Future<void> clearArmed() async {}
 }
 
 Future<ProviderScope> triggerScope({
@@ -127,6 +133,17 @@ Future<void> spin(WidgetTester tester, [int frames = 6]) async {
   }
 }
 
+/// Pumps until [finder] leaves the tree. Dismiss effects are async (Hive +
+/// scheduler) and the route pop follows them, so a fixed spin can be flaky
+/// when the full suite runs in parallel.
+Future<void> waitUntilGone(WidgetTester tester, Finder finder) async {
+  for (var i = 0; i < 40; i++) {
+    if (finder.evaluate().isEmpty) return;
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+}
+
 /// Scrolls [finder] into view on the trigger page (single scrollable) and
 /// taps it. Needed since the expressive layout can overflow short screens.
 Future<void> tapVisible(WidgetTester tester, Finder finder) async {
@@ -178,8 +195,8 @@ void main() {
       container = ProviderScope.containerOf(
           tester.element(find.text('Morning ring')));
 
-      await tapVisible(tester, find.text('Stop'));
-      await spin(tester);
+      await tapVisible(tester, find.text('Cancel'));
+      await waitUntilGone(tester, find.text('Morning ring'));
     });
 
     // Still enabled with a fresh schedule for the next occurrence.
@@ -218,13 +235,41 @@ void main() {
       container = ProviderScope.containerOf(
           tester.element(find.text('Morning once')));
 
-      await tapVisible(tester, find.text('Stop'));
-      await spin(tester);
+      await tapVisible(tester, find.text('Cancel'));
+      await waitUntilGone(tester, find.text('Morning once'));
     });
 
     expect(
         container.read(alarmRepositoryProvider).getById('once')?.enabled,
         isFalse);
+  });
+
+  testWidgets('firing window shows large alarm name and rounded Cancel',
+      (WidgetTester tester) async {
+    await tester.runAsync(() async {
+      await tester.pumpWidget(
+        await triggerScope(
+          dir: dir,
+          suffix: 'visual',
+          backend: FakeBackend(),
+          alarms: [_dailyAlarm('visual')],
+          child: const TriggerPage(alarmId: 'visual'),
+        ),
+      );
+      await tester.pump();
+      await spin(tester, 4);
+    });
+
+    final title = tester.widget<Text>(find.text('Morning visual'));
+    expect(title.style?.fontSize, greaterThanOrEqualTo(40));
+
+    final cancel = tester.widget<FilledButton>(
+      find.byKey(const Key('trigger-cancel-button')),
+    );
+    expect(
+      cancel.style?.shape?.resolve(const <WidgetState>{}),
+      isA<StadiumBorder>(),
+    );
   });
 
   testWidgets('snooze reschedules in the same slot', (WidgetTester tester) async {
@@ -244,7 +289,7 @@ void main() {
       expect(find.text('2 snoozes left'), findsOneWidget);
 
       await tapVisible(tester, find.textContaining('Snooze'));
-      await spin(tester);
+      await waitUntilGone(tester, find.text('Morning nap'));
     });
 
     final fires = backend.scheduled
@@ -301,8 +346,8 @@ void main() {
       container = ProviderScope.containerOf(tester.element(find.text('Pasta')));
       expect(find.text('Done'), findsOneWidget);
 
-      await tapVisible(tester, find.text('Stop'));
-      await spin(tester);
+      await tapVisible(tester, find.text('Cancel'));
+      await waitUntilGone(tester, find.text('Pasta'));
     });
 
     expect(
@@ -325,7 +370,7 @@ void main() {
       expect(find.text('Gone'), findsOneWidget);
 
       await tester.tap(find.text('Close'));
-      await spin(tester);
+      await waitUntilGone(tester, find.text('Gone'));
       expect(find.text('Gone'), findsNothing);
     });
   });
@@ -349,7 +394,7 @@ void main() {
       // before we look at it.
       container = ProviderScope.containerOf(
           tester.element(find.text('underneath')));
-      await spin(tester);
+      await waitUntilGone(tester, find.text('Morning auto'));
     });
 
     expect(

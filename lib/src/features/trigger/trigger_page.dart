@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:vibration/vibration.dart';
 
+import '../../core/audio/sounds.dart';
 import '../../core/haptics.dart';
 import '../../core/motion.dart';
 import '../../core/theme/tokens.dart';
@@ -82,9 +83,18 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
     }
   }
 
+  /// Every alarm and timer uses the vibration pattern chosen in Settings.
   Future<void> _buzz() async {
+    final pattern = vibrationById(
+      ref.read(settingsControllerProvider).defaultVibId,
+    );
+    if (pattern.id == 'off') return;
     try {
-      await Vibration.vibrate(pattern: const [0, 400, 200, 400]);
+      if (pattern.pattern.isEmpty) {
+        await Vibration.vibrate(duration: pattern.duration);
+      } else {
+        await Vibration.vibrate(pattern: pattern.pattern);
+      }
     } catch (_) {
       // No vibrator / no platform channel: silent no-op.
     }
@@ -110,6 +120,16 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
       await effect();
     } catch (_) {
       // Persistence already attempted; never trap the user on this page.
+    }
+    try {
+      await ref.read(schedulerProvider).refreshArmed(
+            alarms: ref.read(alarmRepositoryProvider).all(),
+            timers: ref.read(timerRepositoryProvider).all(),
+            settings: ref.read(settingsControllerProvider),
+            now: DateTime.now().toUtc(),
+          );
+    } catch (_) {
+      // Status notice is best effort; the fire action already completed.
     }
     if (mounted) Navigator.maybePop(context);
   }
@@ -182,13 +202,24 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
     final title = missing
         ? 'Gone'
         : _isTimer
-        ? (timer!.title.isEmpty ? 'Timer' : timer.title)
-        : (alarm!.title.isEmpty ? 'Alarm' : alarm.title);
-    final timeLabel = missing
-        ? ''
+            ? (timer!.title.isEmpty ? 'Timer' : timer.title)
+            : (alarm!.title.isEmpty ? 'Alarm' : alarm.title);
+    final subtitle = missing
+        ? 'This alarm no longer exists.'
         : _isTimer
-        ? 'Done'
-        : '${fmtTime(DateTime.now().toUtc(), use24h: use24h)} UTC';
+            ? 'Done'
+            : '${fmtTime(DateTime.now().toUtc(), use24h: use24h)} UTC';
+
+    final titleStyle = (Theme.of(context).textTheme.displayMedium ??
+            const TextStyle(fontSize: 45))
+        .copyWith(
+      fontWeight: FontWeight.w800,
+      height: 1.05,
+      letterSpacing: -0.8,
+    );
+    final subtitleStyle = (Theme.of(context).textTheme.titleLarge ??
+            const TextStyle(fontSize: 22))
+        .copyWith(fontFeatures: _tabular, fontWeight: FontWeight.w600);
 
     return PopScope(
       canPop: true,
@@ -196,92 +227,97 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
         if (didPop) _stop();
       },
       child: Scaffold(
+        backgroundColor: Colors.transparent,
         body: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(32),
-            child: Center(
-              child: GlassCard(
-                padding: const EdgeInsets.all(28),
-                tint: LarmPalette.glassStrong,
-                accent: LarmPalette.pink,
-                glow: true,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        PulseRings(size: 240, color: LarmPalette.pink),
-                        Icon(
-                              LucideIcons.bellRing,
-                              size: 80,
-                              color: LarmPalette.pink,
-                            )
-                            .animate()
-                            .scale(duration: entrance)
-                            .fadeIn(duration: entrance),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    NeonText(
-                          title,
-                          style:
-                              Theme.of(context).textTheme.headlineLarge ??
-                              const TextStyle(fontSize: 32),
-                          gradient: LarmPalette.hotGradient,
-                          glow: LarmPalette.pink,
-                        )
-                        .animate()
-                        .fadeIn(duration: entrance)
-                        .scale(duration: entrance),
-                    if (timeLabel.isNotEmpty) ...[
-                      const SizedBox(height: 8),
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: GlassCard(
+                  padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                  tint: LarmPalette.glassStrong,
+                  accent: LarmPalette.pink,
+                  glow: true,
+                  borderRadius: const BorderRadius.all(Radius.circular(32)),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            PulseRings(size: 180, color: LarmPalette.pink),
+                            Icon(
+                                  LucideIcons.bellRing,
+                                  size: 64,
+                                  color: LarmPalette.pink,
+                                )
+                                .animate()
+                                .scale(duration: entrance)
+                                .fadeIn(duration: entrance),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
                       NeonText(
-                        timeLabel,
-                        style:
-                            Theme.of(context).textTheme.displayMedium
-                                ?.copyWith(fontFeatures: _tabular) ??
-                            const TextStyle(fontSize: 48),
+                            title,
+                            textAlign: TextAlign.center,
+                            style: titleStyle,
+                            gradient: LarmPalette.hotGradient,
+                            glow: LarmPalette.pink,
+                          )
+                          .animate()
+                          .fadeIn(duration: entrance)
+                          .slideY(
+                            begin: 0.08,
+                            end: 0,
+                            duration: entrance,
+                          ),
+                      const SizedBox(height: 10),
+                      NeonText(
+                        subtitle,
+                        textAlign: TextAlign.center,
+                        style: subtitleStyle,
                         gradient: LarmPalette.sunsetGradient,
                         glow: LarmPalette.amber,
                       ).animate().fadeIn(duration: entrance),
-                    ],
-                    if (missing) ...[
-                      const SizedBox(height: 8),
-                      const Text('This alarm no longer exists.'),
-                    ],
-                    const SizedBox(height: 32),
-                    if (!missing) ...[
-                      if (_remaining > 0)
-                        Text(
-                          '$_remaining snooze${_remaining == 1 ? '' : 's'} left',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      if (_remaining <= 0)
-                        Text(
-                          'No snoozes left',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.tonal(
+                      if (missing) ...[
+                        const SizedBox(height: 24),
+                        FilledButton(
                           style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(60),
-                            textStyle: Theme.of(context).textTheme.titleLarge,
+                            minimumSize: const Size.fromHeight(56),
+                            backgroundColor: LarmPalette.violet,
+                            foregroundColor: LarmPalette.backgroundDeep,
+                            shape: const StadiumBorder(),
+                          ),
+                          onPressed: () => Navigator.maybePop(context),
+                          child: const Text('Close'),
+                        ),
+                      ] else ...[
+                        const SizedBox(height: 18),
+                        Text(
+                          _remaining > 0
+                              ? '$_remaining snooze${_remaining == 1 ? '' : 's'} left'
+                              : 'No snoozes left',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 20),
+                        FilledButton.tonal(
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(56),
+                            textStyle: Theme.of(context).textTheme.titleMedium,
                             backgroundColor: LarmPalette.violet.withValues(
-                              alpha: 0.35,
+                              alpha: 0.28,
                             ),
                             foregroundColor: LarmPalette.text,
                             side: const BorderSide(
                               color: LarmPalette.violet,
-                              width: 1.5,
+                              width: 1.2,
                             ),
-                            shadowColor: LarmPalette.violet,
-                            elevation: 8,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
+                            shape: const StadiumBorder(),
                           ),
                           onPressed: _remaining > 0
                               ? () async {
@@ -291,46 +327,29 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
                               : null,
                           child: Text('Snooze ${settings.snoozeMin}m'),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
+                        const SizedBox(height: 12),
+                        FilledButton(
+                          key: const Key('trigger-cancel-button'),
                           style: FilledButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            foregroundColor: LarmPalette.text,
                             minimumSize: const Size.fromHeight(60),
-                            textStyle: Theme.of(context).textTheme.titleLarge,
-                            side: const BorderSide(
-                              color: LarmPalette.glassBorder,
-                            ),
-                            shadowColor: Colors.transparent,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
+                            textStyle: (Theme.of(context)
+                                        .textTheme
+                                        .titleLarge ??
+                                    const TextStyle(fontSize: 22))
+                                .copyWith(fontWeight: FontWeight.w700),
+                            backgroundColor: LarmPalette.cyan,
+                            foregroundColor: LarmPalette.backgroundDeep,
+                            shape: const StadiumBorder(),
                           ),
                           onPressed: () async {
                             await hapticConfirm();
                             await _stop();
                           },
-                          child: const Text('Stop'),
+                          child: const Text('Cancel'),
                         ),
-                      ),
-                    ] else ...[
-                      FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: LarmPalette.violet,
-                          foregroundColor: LarmPalette.backgroundDeep,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
-                        onPressed: () => Navigator.maybePop(context),
-                        child: const Text('Close'),
-                      ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),

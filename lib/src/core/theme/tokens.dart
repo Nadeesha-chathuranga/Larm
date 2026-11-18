@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../motion.dart';
 
@@ -324,12 +324,14 @@ class NeonText extends StatelessWidget {
     required this.style,
     this.gradient = LarmPalette.brandGradient,
     this.glow = LarmPalette.cyan,
+    this.textAlign,
   });
 
   final String text;
   final TextStyle style;
   final Gradient gradient;
   final Color glow;
+  final TextAlign? textAlign;
 
   @override
   Widget build(BuildContext context) {
@@ -338,6 +340,7 @@ class NeonText extends StatelessWidget {
       shaderCallback: (bounds) => gradient.createShader(bounds),
       child: Text(
         text,
+        textAlign: textAlign,
         style: style.copyWith(
           color: Colors.white,
           shadows: [
@@ -350,7 +353,7 @@ class NeonText extends StatelessWidget {
   }
 }
 
-/// Frosted container with a restrained hairline edge and optional soft bloom.
+/// Dark card with a gradient hairline edge and a soft inward glow.
 class GlassCard extends StatelessWidget {
   const GlassCard({
     super.key,
@@ -375,27 +378,23 @@ class GlassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final innerAlpha = glow ? 0.20 : 0.11;
+    final baseTop =
+        Color.lerp(const Color(0xFF0C0F16), tint.withValues(alpha: 1), 0.12) ??
+        const Color(0xFF0C0F16);
+
     final panel = Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            accent.withValues(alpha: 0.28),
+            accent.withValues(alpha: 0.30),
             LarmPalette.glassBorder,
-            accent.withValues(alpha: 0.08),
+            accent.withValues(alpha: 0.10),
           ],
         ),
         borderRadius: borderRadius,
-        boxShadow: glow
-            ? [
-                BoxShadow(
-                  color: accent.withValues(alpha: 0.10),
-                  blurRadius: 20,
-                  spreadRadius: -8,
-                ),
-              ]
-            : null,
       ),
       child: Padding(
         padding: const EdgeInsets.all(1),
@@ -408,14 +407,49 @@ class GlassCard extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    tint,
-                    tint.withValues(alpha: tint.a * 0.4),
-                  ],
+                  colors: [baseTop, const Color(0xFF040509)],
                 ),
                 borderRadius: borderRadius,
               ),
-              child: Padding(padding: padding, child: child),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: borderRadius,
+                        gradient: RadialGradient(
+                          center: Alignment.topLeft,
+                          radius: 1.15,
+                          colors: [
+                            accent.withValues(alpha: innerAlpha),
+                            Colors.transparent,
+                          ],
+                          stops: const [0.0, 0.72],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: borderRadius,
+                        gradient: RadialGradient(
+                          center: Alignment.bottomRight,
+                          radius: 1.15,
+                          colors: [
+                            LarmPalette.cyan.withValues(
+                              alpha: innerAlpha * 0.55,
+                            ),
+                            Colors.transparent,
+                          ],
+                          stops: const [0.0, 0.72],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(padding: padding, child: child),
+                ],
+              ),
             ),
           ),
         ),

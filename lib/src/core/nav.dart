@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Global navigator for notification-tap routing. Notification callbacks
 /// (including background isolates) can't use a BuildContext, so they push

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/theme/tokens.dart';
@@ -39,13 +39,7 @@ class HybridHero extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Text(dateLabel, style: textTheme.titleLarge),
-              const Spacer(),
-              GlassPill(label: primaryLabel, color: LarmPalette.cyan),
-            ],
-          ),
+          Text(dateLabel, style: textTheme.titleLarge),
           const SizedBox(height: 12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,

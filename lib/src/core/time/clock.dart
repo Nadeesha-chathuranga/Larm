@@ -19,6 +19,41 @@ String fmtTime(DateTime dt, {required bool use24h}) {
 String fmtUtcTime(DateTime dt, {required bool use24h}) =>
     fmtTime(dt.toUtc(), use24h: use24h);
 
+const List<String> _shortMonths = <String>[
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/// Formats the UTC date and time fields of [dt], honoring the 12/24h setting.
+///
+/// Example: `Nov 20, 2026 · 08:05` (or `8:05 AM` in 12h mode).
+String fmtDateTime(DateTime dt, {required bool use24h}) {
+  final utc = dt.toUtc();
+  return '${_shortMonths[utc.month - 1]} ${utc.day}, ${utc.year} · '
+      '${fmtTime(utc, use24h: use24h)}';
+}
+
+/// The UTC instant a dated one-time alarm is configured for, or null when
+/// the alarm repeats or has no explicit date.
+DateTime? oneTimeInstantUtc(Alarm alarm) {
+  if (alarm.repeat != AlarmRepeat.oneTime) return null;
+  final year = alarm.year;
+  final month = alarm.month;
+  final day = alarm.day;
+  if (year == null || month == null || day == null) return null;
+  return DateTime.utc(year, month, day, alarm.hour, alarm.minute);
+}
+
 /// Next UTC fire instant strictly after [fromUtc], or null when a dated
 /// one-time alarm has already passed.
 ///

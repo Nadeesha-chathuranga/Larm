@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/haptics.dart';
@@ -31,7 +31,7 @@ String repeatLabel(Alarm alarm) {
   }
 }
 
-/// Alarm list row: title, next-fire subtitle, zone badge, repeat, toggle.
+/// Alarm list row: title, next-fire subtitle, repeat and toggle.
 class AlarmTile extends StatelessWidget {
   const AlarmTile({
     super.key,
@@ -61,19 +61,12 @@ class AlarmTile extends StatelessWidget {
         padding: const EdgeInsets.only(top: 4),
         child: Text(subtitle, style: textTheme.bodyLarge),
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const GlassPill(label: 'UTC', color: LarmPalette.cyan),
-          const SizedBox(width: 4),
-          Semantics(
-            label:
-                '${alarm.title.isEmpty ? 'Alarm' : alarm.title} ${alarm.enabled ? 'on' : 'off'}',
-            toggled: alarm.enabled,
-            excludeSemantics: true,
-            child: _BouncySwitch(value: alarm.enabled, onChanged: onToggle),
-          ),
-        ],
+      trailing: Semantics(
+        label:
+            '${alarm.title.isEmpty ? 'Alarm' : alarm.title} ${alarm.enabled ? 'on' : 'off'}',
+        toggled: alarm.enabled,
+        excludeSemantics: true,
+        child: _BouncySwitch(value: alarm.enabled, onChanged: onToggle),
       ),
       onTap: onTap,
     );
