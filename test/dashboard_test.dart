@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
@@ -8,19 +8,21 @@ import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:larm/src/data/models/alarm.dart';
 import 'package:larm/src/data/repos/alarm_repo.dart';
 import 'package:larm/src/features/dashboard/widgets/alarm_tile.dart';
+
 import 'widget_test.dart' show dashboardScope, testAlarm, testTimer;
 
 void main() {
   late Directory dir;
 
-  /// Lets real-async work (Hive writes, dismiss/resize animations, async
-  /// tap handlers) finish, then redraws. Required because these tests run
-  /// inside `tester.runAsync` (Hive hangs in fake async).
-  Future<void> settle(WidgetTester tester,
-      [int millis = 300]) async {
-    await Future<void>.delayed(Duration(milliseconds: millis));
-    await tester.pump();
-    await tester.pump();
+  /// Lets real-async work (Hive writes, haptic-awaiting tap handlers,
+  /// dismiss/resize animations) finish, then redraws. Required because these
+  /// tests run inside `tester.runAsync` (Hive hangs in fake async). Pumps
+  /// carry durations so material_ui transitions advance on the fake clock.
+  Future<void> settle(WidgetTester tester, [int frames = 8]) async {
+    for (var i = 0; i < frames; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
+    }
   }
 
   setUpAll(() async {
@@ -44,28 +46,46 @@ void main() {
     }
   });
 
-  testWidgets('lists alarms with badges and toggles persist',
-      (WidgetTester tester) async {
+  testWidgets('lists alarms and toggles persist', (WidgetTester tester) async {
     await tester.runAsync(() async {
       await tester.pumpWidget(
         await dashboardScope(
           dir: dir,
           suffix: 'list',
-          alarms: [testAlarm(id: 'a1'), testAlarm(id: 'a2')],
+          alarms: [
+            testAlarm(id: 'a1'),
+            testAlarm(id: 'a2'),
+          ],
         ),
       );
       await tester.pump();
 
       expect(find.text('Morning a1'), findsOneWidget);
       expect(find.text('Morning a2'), findsOneWidget);
-      // UTC badge on the hero plus one per alarm tile.
-      expect(find.text('UTC').evaluate().length, greaterThanOrEqualTo(3));
+
+      // Cards are separated by a small gap; the last one has no trailing gap.
+      final firstGap = tester.widget<Padding>(
+        find.ancestor(
+          of: find.byKey(const ValueKey('alarm-a1')),
+          matching: find.byType(Padding),
+        ).first,
+      ).padding as EdgeInsets;
+      final lastGap = tester.widget<Padding>(
+        find.ancestor(
+          of: find.byKey(const ValueKey('alarm-a2')),
+          matching: find.byType(Padding),
+        ).first,
+      ).padding as EdgeInsets;
+      expect(firstGap.bottom, 12);
+      expect(lastGap.bottom, 0);
+
+      // Only the hero keeps a subtle plain UTC hint; tiles have no badge.
+      expect(find.text('UTC'), findsOneWidget);
       expect(find.text('Local'), findsNothing);
 
       // Toggle the first alarm off; persistence (not exact scheduling) is
       // what this test verifies — platform channels are absent here.
-      final switches =
-          tester.widgetList<Switch>(find.byType(Switch)).toList();
+      final switches = tester.widgetList<Switch>(find.byType(Switch)).toList();
       expect(switches.where((s) => s.value), hasLength(2));
       await tester.tap(find.byType(Switch).first);
       await settle(tester);
@@ -73,26 +93,68 @@ void main() {
       final container = ProviderScope.containerOf(
         tester.element(find.text('Morning a1')),
       );
-      expect(container.read(alarmRepositoryProvider).getById('a1')?.enabled,
-          isFalse);
+      expect(
+        container.read(alarmRepositoryProvider).getById('a1')?.enabled,
+        isFalse,
+      );
     });
   });
 
   testWidgets('hero shows UTC only', (WidgetTester tester) async {
     await tester.runAsync(() async {
-      await tester.pumpWidget(
-        await dashboardScope(dir: dir, suffix: 'hero'),
-      );
+      await tester.pumpWidget(await dashboardScope(dir: dir, suffix: 'hero'));
       await tester.pump();
 
-      expect(find.text('UTC'), findsWidgets);
+      expect(find.text('UTC'), findsOneWidget);
       expect(find.text('Local'), findsNothing);
       expect(find.byType(ActionChip), findsNothing);
     });
   });
 
-  testWidgets('swipe deletes with 5s undo restoring the alarm',
-      (WidgetTester tester) async {
+  testWidgets('alarm cards show the UTC date and time they fire', (
+    WidgetTester tester,
+  ) async {
+    final armed = testAlarm(id: 'dated')
+      ..repeat = AlarmRepeat.oneTime
+      ..year = 2099
+      ..month = 1
+      ..day = 2
+      ..hour = 8
+      ..minute = 5;
+    final idle = testAlarm(id: 'idle', enabled: false)
+      ..repeat = AlarmRepeat.oneTime
+      ..year = 2099
+      ..month = 3
+      ..day = 4
+      ..hour = 9
+      ..minute = 30;
+
+    await tester.runAsync(() async {
+      await tester.pumpWidget(
+        await dashboardScope(
+          dir: dir,
+          suffix: 'fire-dates',
+          alarms: [armed, idle],
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Morning dated'), findsOneWidget);
+      expect(
+        find.text('Jan 2, 2099 · 8:05 AM · One-time'),
+        findsOneWidget,
+      );
+      expect(find.text('Morning idle'), findsOneWidget);
+      expect(
+        find.text('Mar 4, 2099 · 9:30 AM · One-time · Off'),
+        findsOneWidget,
+      );
+    });
+  });
+
+  testWidgets('swipe deletes with 5s undo restoring the alarm', (
+    WidgetTester tester,
+  ) async {
     // 1. Real async: Hive setup + first pump (Hive hangs in fake async).
     late ProviderContainer container;
     await tester.runAsync(() async {
@@ -125,8 +187,7 @@ void main() {
     });
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(
-        container.read(alarmRepositoryProvider).getById('gone'), isNull);
+    expect(container.read(alarmRepositoryProvider).getById('gone'), isNull);
     expect(find.text('Alarm deleted'), findsOneWidget);
 
     // 4. Fake zone: tap Undo (upsert pends until real async resumes).
@@ -137,20 +198,16 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 300));
     });
     await tester.pump(const Duration(milliseconds: 300));
-    expect(
-        container.read(alarmRepositoryProvider).getById('gone'), isNotNull);
+    expect(container.read(alarmRepositoryProvider).getById('gone'), isNotNull);
     expect(find.text('Morning gone'), findsOneWidget);
   });
 
-  testWidgets('timers show remaining with working controls',
-      (WidgetTester tester) async {
+  testWidgets('timers show remaining with working controls', (
+    WidgetTester tester,
+  ) async {
     await tester.runAsync(() async {
       await tester.pumpWidget(
-        await dashboardScope(
-          dir: dir,
-          suffix: 'timers',
-          timers: [testTimer()],
-        ),
+        await dashboardScope(dir: dir, suffix: 'timers', timers: [testTimer()]),
       );
       await tester.pump();
 

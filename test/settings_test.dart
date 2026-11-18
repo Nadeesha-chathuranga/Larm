@@ -7,6 +7,7 @@ import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:larm/src/core/audio/sounds.dart';
 import 'package:larm/src/core/notifications/channels.dart';
 import 'package:larm/src/data/repos/settings_repo.dart';
+
 import 'widget_test.dart' show dashboardScope;
 
 Future<void> spin(WidgetTester tester, [int frames = 6]) async {
@@ -49,9 +50,7 @@ void main() {
       // Best effort only (see dashboard_test teardown note).
     }
     try {
-      await dir.delete(recursive: true).timeout(
-            const Duration(seconds: 10),
-          );
+      await dir.delete(recursive: true).timeout(const Duration(seconds: 10));
     } catch (_) {
       // Best effort only.
     }
@@ -67,24 +66,22 @@ void main() {
         channelFor(overrideMode: false, soundId: 'glass_chime'),
         'larm_tone_glass_chime_v2',
       );
-      expect(
-        channelFor(overrideMode: false, soundId: 'system'),
-        larmFollowV2,
-      );
-      expect(
-        channelFor(overrideMode: false, soundId: 'nope'),
-        larmFollowV2,
-      );
+      expect(channelFor(overrideMode: false, soundId: 'system'), larmFollowV2);
+      expect(channelFor(overrideMode: false, soundId: 'nope'), larmFollowV2);
     });
 
-    test('v2 set has follow + 22 tones + override with bypass', () {
+    test('v2 set has status + follow + 22 tones + override with bypass', () {
       final channels = v2Channels();
-      expect(channels, hasLength(24));
+      expect(channels, hasLength(25));
+      final armed = channels.singleWhere((c) => c.id == larmArmedV2);
+      expect(armed.playSound, isFalse);
+      expect(armed.enableVibration, isFalse);
       final override = channels.singleWhere((c) => c.id == larmOverrideV2);
       expect(override.bypassDnd, isTrue);
       expect(override.importance, isNotNull);
-      final tones =
-          channels.where((c) => c.id.startsWith('larm_tone_')).toList();
+      final tones = channels
+          .where((c) => c.id.startsWith('larm_tone_'))
+          .toList();
       expect(tones, hasLength(22));
       for (final tone in tones) {
         expect(tone.sound, isNotNull);
@@ -92,8 +89,10 @@ void main() {
     });
 
     test('sound catalog is stable and vibration falls back', () {
-      expect(alarmSounds.map((s) => s.id),
-          containsAll(['glass_chime', 'mono_beep', 'zen_bowl', 'system']));
+      expect(
+        alarmSounds.map((s) => s.id),
+        containsAll(['glass_chime', 'mono_beep', 'zen_bowl', 'system']),
+      );
       expect(isKnownSound('glass_chime'), isTrue);
       expect(isKnownSound('nope'), isFalse);
       expect(vibrationById('double').pattern, isNotEmpty);
@@ -124,7 +123,9 @@ void main() {
         greaterThanOrEqualTo(4),
       );
       // Ten original royalty-free tones in their own first-shown category.
-      final popular = alarmSounds.where((s) => s.category == 'Popular').toList();
+      final popular = alarmSounds
+          .where((s) => s.category == 'Popular')
+          .toList();
       expect(popular, hasLength(10));
       for (final id in [
         'classic_chime',
@@ -153,13 +154,13 @@ void main() {
       final container = ProviderScope.containerOf(
         tester.element(find.text('Larm')),
       );
-      final controller =
-          container.read(settingsControllerProvider.notifier);
+      final controller = container.read(settingsControllerProvider.notifier);
       await controller.updateSoundMode(1);
       await controller.updateSnooze(10, 2);
       await controller.updateTheme(mode: 2, family: 4);
       await controller.updateTimeFormat(1);
       await controller.updateDefaultSound('zen_bowl');
+      await controller.updateDefaultVibration('double');
 
       final box = container.read(settingsBoxProvider);
       final reloaded = loadSettings(box);
@@ -170,19 +171,18 @@ void main() {
       expect(reloaded.family, 4);
       expect(reloaded.timeFormat, 1);
       expect(reloaded.defaultSoundId, 'zen_bowl');
+      expect(reloaded.defaultVibId, 'double');
     });
   });
 
-  testWidgets('settings page applies theme, snooze, mode and format',
-      (WidgetTester tester) async {
+  testWidgets('settings page applies theme, snooze, mode and format', (
+    WidgetTester tester,
+  ) async {
     late ProviderContainer container;
     await tester.runAsync(() async {
-      await tester.pumpWidget(
-        await dashboardScope(dir: dir, suffix: 'page'),
-      );
+      await tester.pumpWidget(await dashboardScope(dir: dir, suffix: 'page'));
       await tester.pump();
-      container =
-          ProviderScope.containerOf(tester.element(find.text('Larm')));
+      container = ProviderScope.containerOf(tester.element(find.text('Larm')));
 
       await tester.tap(find.byTooltip('Settings'));
       await spin(tester);
@@ -192,8 +192,7 @@ void main() {
       // navigate back up.
       await tester.tap(find.byTooltip('Increase Minutes'));
       await spin(tester, 4);
-      expect(
-          container.read(settingsControllerProvider).snoozeMin, 6);
+      expect(container.read(settingsControllerProvider).snoozeMin, 6);
 
       await tapVisible(tester, find.text('Always override'));
       await spin(tester, 4);
@@ -202,6 +201,10 @@ void main() {
       await tapVisible(tester, find.text('24-hour'));
       await spin(tester, 4);
       expect(container.read(settingsControllerProvider).timeFormat, 1);
+
+      await tapVisible(tester, find.text('Double'));
+      await spin(tester, 4);
+      expect(container.read(settingsControllerProvider).defaultVibId, 'double');
     });
   });
 }

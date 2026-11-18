@@ -10,6 +10,8 @@ import 'package:timezone/timezone.dart' as tz;
 class InMemoryBackend implements AlarmBackend {
   final scheduled = <ScheduledFire>[];
   final cancelled = <int>[];
+  final armed = <({String title, String body})>[];
+  bool armedCleared = false;
 
   @override
   Future<void> schedule(ScheduledFire fire) async {
@@ -19,6 +21,17 @@ class InMemoryBackend implements AlarmBackend {
   @override
   Future<void> cancel(int id) async {
     cancelled.add(id);
+  }
+
+  @override
+  Future<void> updateArmed({required String title, required String body}) async {
+    armed.add((title: title, body: body));
+    armedCleared = false;
+  }
+
+  @override
+  Future<void> clearArmed() async {
+    armedCleared = true;
   }
 }
 
@@ -92,27 +105,29 @@ void main() {
         now: DateTime.utc(2026, 9, 17, 7, 0),
       );
       expect(outcome, SyncOutcome.cancelled);
-      expect(
-          backend.cancelled, [AlarmScheduler.notificationIdForAlarm('a1')]);
+      expect(backend.cancelled, [AlarmScheduler.notificationIdForAlarm('a1')]);
       expect(backend.scheduled, isEmpty);
     });
 
-    test('enabled daily alarm schedules next occurrence (follow channel)', () async {
-      final backend = InMemoryBackend();
-      final outcome = await AlarmScheduler(backend: backend).syncAlarm(
-        _alarm(),
-        Settings.defaults(),
-        now: DateTime.utc(2026, 9, 17, 7, 0),
-      );
-      expect(outcome, SyncOutcome.scheduled);
-      final fire = backend.scheduled.single;
-      expect(fire.id, AlarmScheduler.notificationIdForAlarm('a1'));
-      expect(fire.when, tz.TZDateTime.utc(2026, 9, 17, 8, 0));
-      expect(fire.payload, 'alarm:a1');
-      expect(fire.details.android?.channelId, 'larm_tone_glass_chime_v2');
-      expect(fire.details.android?.fullScreenIntent, isTrue);
-      expect(fire.details.android?.actions?.length, 2);
-    });
+    test(
+      'enabled daily alarm schedules next occurrence (follow channel)',
+      () async {
+        final backend = InMemoryBackend();
+        final outcome = await AlarmScheduler(backend: backend).syncAlarm(
+          _alarm(),
+          Settings.defaults(),
+          now: DateTime.utc(2026, 9, 17, 7, 0),
+        );
+        expect(outcome, SyncOutcome.scheduled);
+        final fire = backend.scheduled.single;
+        expect(fire.id, AlarmScheduler.notificationIdForAlarm('a1'));
+        expect(fire.when, tz.TZDateTime.utc(2026, 9, 17, 8, 0));
+        expect(fire.payload, 'alarm:a1');
+        expect(fire.details.android?.channelId, 'larm_tone_glass_chime_v2');
+        expect(fire.details.android?.fullScreenIntent, isTrue);
+        expect(fire.details.android?.actions?.length, 2);
+      },
+    );
 
     test('override mode picks bypass channel', () async {
       final backend = InMemoryBackend();
@@ -126,16 +141,58 @@ void main() {
       expect(fire.details.android?.channelBypassDnd, isTrue);
     });
 
-    test('system sound falls back to the default follow channel', () async {
+    test(
+      'system default sound falls back to the default follow channel',
+      () async {
+        final backend = InMemoryBackend();
+        await AlarmScheduler(backend: backend).syncAlarm(
+          _alarm(),
+          Settings.defaults().copyWith(defaultSoundId: 'system'),
+          now: DateTime.utc(2026, 9, 17, 7, 0),
+        );
+        expect(
+          backend.scheduled.single.details.android?.channelId,
+          'larm_follow_v2',
+        );
+      },
+    );
+
+    test('global tone wins over a legacy per-alarm tone', () async {
       final backend = InMemoryBackend();
-      final alarm = _alarm()..soundId = 'system';
+      final alarm = _alarm()..soundId = 'mono_beep';
       await AlarmScheduler(backend: backend).syncAlarm(
         alarm,
-        Settings.defaults(),
+        Settings.defaults().copyWith(defaultSoundId: 'zen_bowl'),
         now: DateTime.utc(2026, 9, 17, 7, 0),
       );
-      expect(backend.scheduled.single.details.android?.channelId,
-          'larm_follow_v2');
+      expect(
+        backend.scheduled.single.details.android?.channelId,
+        'larm_tone_zen_bowl_v2',
+      );
+    });
+
+    test('global vibration pattern is applied to the notification', () async {
+      final backend = InMemoryBackend();
+      await AlarmScheduler(backend: backend).syncAlarm(
+        _alarm(),
+        Settings.defaults().copyWith(defaultVibId: 'double'),
+        now: DateTime.utc(2026, 9, 17, 7, 0),
+      );
+      final details = backend.scheduled.single.details.android;
+      expect(details?.enableVibration, isTrue);
+      expect(details?.vibrationPattern, isNotNull);
+    });
+
+    test('off vibration disables notification vibration', () async {
+      final backend = InMemoryBackend();
+      await AlarmScheduler(backend: backend).syncAlarm(
+        _alarm(),
+        Settings.defaults().copyWith(defaultVibId: 'off'),
+        now: DateTime.utc(2026, 9, 17, 7, 0),
+      );
+      final details = backend.scheduled.single.details.android;
+      expect(details?.enableVibration, isFalse);
+      expect(details?.vibrationPattern, isNull);
     });
 
     test('empty title falls back to Alarm', () async {
@@ -177,6 +234,20 @@ void main() {
       final fire = backend.scheduled.single;
       expect(fire.id, AlarmScheduler.notificationIdForAlarm('a1'));
       expect(fire.when, tz.TZDateTime.utc(2026, 9, 17, 7, 10));
+    });
+
+    test('snooze uses the global tone, not a legacy per-alarm tone', () async {
+      final backend = InMemoryBackend();
+      await AlarmScheduler(backend: backend).snoozeAlarm(
+        _alarm()..soundId = 'mono_beep',
+        Settings.defaults().copyWith(defaultSoundId: 'zen_bowl'),
+        now: DateTime.utc(2026, 9, 17, 7, 0),
+        remaining: 2,
+      );
+      expect(
+        backend.scheduled.single.details.android?.channelId,
+        'larm_tone_zen_bowl_v2',
+      );
     });
 
     test('zero remaining schedules nothing', () async {
@@ -231,7 +302,10 @@ void main() {
     test('aggregates counts across entries', () async {
       final backend = InMemoryBackend();
       final result = await AlarmScheduler(backend: backend).syncAll(
-        alarms: [_alarm(id: 'on'), _alarm(id: 'off', enabled: false)],
+        alarms: [
+          _alarm(id: 'on'),
+          _alarm(id: 'off', enabled: false),
+        ],
         timers: [_timer(targetUtc: DateTime.utc(2026, 9, 17, 8, 0))],
         settings: Settings.defaults(),
         now: DateTime.utc(2026, 9, 17, 7, 0),
@@ -239,6 +313,35 @@ void main() {
       expect(result.scheduled, 2);
       expect(result.cancelled, 1);
       expect(result.expired, 0);
+    });
+
+    test('shows earliest fire in the armed status notice', () async {
+      final backend = InMemoryBackend();
+      await AlarmScheduler(backend: backend).syncAll(
+        alarms: [
+          _alarm(id: 'on'),
+          _alarm(id: 'off', enabled: false),
+        ],
+        timers: [_timer(targetUtc: DateTime.utc(2026, 9, 17, 8, 0))],
+        settings: Settings.defaults(),
+        now: DateTime.utc(2026, 9, 17, 7, 0),
+      );
+      expect(backend.armed, hasLength(1));
+      expect(backend.armed.single.title, 'Alarm armed');
+      expect(backend.armed.single.body, contains('Morning'));
+      expect(backend.armed.single.body, contains('8:00 AM UTC'));
+    });
+
+    test('clears the armed notice when nothing is enabled', () async {
+      final backend = InMemoryBackend();
+      await AlarmScheduler(backend: backend).syncAll(
+        alarms: [_alarm(enabled: false)],
+        timers: [_timer(status: TimerStatus.paused)],
+        settings: Settings.defaults(),
+        now: DateTime.utc(2026, 9, 17, 7, 0),
+      );
+      expect(backend.armed, isEmpty);
+      expect(backend.armedCleared, isTrue);
     });
   });
 

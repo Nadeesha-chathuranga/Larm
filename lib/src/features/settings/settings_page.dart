@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:vibration/vibration.dart';
 
 import '../../core/audio/sounds.dart';
 import '../../core/haptics.dart';
@@ -13,8 +14,9 @@ import '../../data/repos/settings_repo.dart';
 import '../../data/repos/timer_repo.dart';
 import '../editor/widgets/sound_sheet.dart';
 
-/// Settings: sound mode, snooze, time format, default tone. The app always
-/// uses the single dark Aurora glass theme and UTC time.
+/// Settings: sound mode, global tone and vibration, snooze, time format.
+/// Every alarm and timer uses these shared choices. The app always uses the
+/// single dark Aurora glass theme and UTC time.
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
 
@@ -52,6 +54,28 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       );
     } catch (_) {
       // Platform channels absent (tests/desktop): ignore.
+    }
+  }
+
+  /// Tone changes must reschedule so the new notification channel is used.
+  Future<void> _setDefaultSound(String id) async {
+    await hapticTap();
+    await ref.read(settingsControllerProvider.notifier).updateDefaultSound(id);
+    await _resyncAll();
+  }
+
+  /// Best-effort preview of a vibration pattern (no-op without a vibrator).
+  Future<void> _previewVibration(String id) async {
+    final pattern = vibrationById(id);
+    if (pattern.id == 'off') return;
+    try {
+      if (pattern.pattern.isEmpty) {
+        await Vibration.vibrate(duration: pattern.duration);
+      } else {
+        await Vibration.vibrate(pattern: pattern.pattern);
+      }
+    } catch (_) {
+      // No vibrator / no platform channel: silent no-op.
     }
   }
 
@@ -173,7 +197,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           _group(
             context,
             children: [
-              _label(context, 'Default alarm tone'),
+              _label(context, 'Alarm tone'),
               GlassCard(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -201,15 +225,42 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       currentId: settings.defaultSoundId,
                     );
                     if (picked != null && context.mounted) {
-                      await controller.updateDefaultSound(picked);
+                      await _setDefaultSound(picked);
                     }
                   },
                 ),
               ),
               const SizedBox(height: 8),
               Text(
-                'Per-alarm tones are picked in the editor; override mode always '
+                'Every alarm and timer uses this tone. Override mode always '
                 'uses the bypass channel for reliability.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+          ),
+          _group(
+            context,
+            children: [
+              _label(context, 'Vibration'),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final pattern in vibrationPatterns)
+                    ChoiceChip(
+                      label: Text(pattern.label),
+                      selected: settings.defaultVibId == pattern.id,
+                      onSelected: (selected) async {
+                        if (!selected) return;
+                        await hapticTap();
+                        await controller.updateDefaultVibration(pattern.id);
+                        await _previewVibration(pattern.id);
+                      },
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Every alarm and timer uses this vibration pattern.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ],

@@ -1,6 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- M2: exact alarms (user-granted), full-screen alerts, boot reschedule. -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <!-- Android 12: exact alarms are user-granted; scoped to 32 so Android 13+
+         uses the auto-granted USE_EXACT_ALARM below (declaring both on one
+         device can hide Larm from Alarms & reminders settings). -->
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32"/>
+    <!-- Alarm app: auto-granted on Android 13+, so exact fires cannot depend on
+         a user permission state that OEMs sometimes fail to surface. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>

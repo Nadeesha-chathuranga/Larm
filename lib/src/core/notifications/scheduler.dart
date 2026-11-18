@@ -33,6 +33,11 @@ class ScheduledFire {
 abstract class AlarmBackend {
   Future<void> schedule(ScheduledFire fire);
   Future<void> cancel(int id);
+
+  /// Optional status-notification hooks. Default no-ops keep test backends
+  /// simple; the production backend shows a silent "armed" notice.
+  Future<void> updateArmed({required String title, required String body}) async {}
+  Future<void> clearArmed() async {}
 }
 
 class PluginBackend implements AlarmBackend {
@@ -48,6 +53,13 @@ class PluginBackend implements AlarmBackend {
 
   @override
   Future<void> cancel(int id) => NotificationService.cancel(id);
+
+  @override
+  Future<void> updateArmed({required String title, required String body}) =>
+      NotificationService.showArmed(title: title, body: body);
+
+  @override
+  Future<void> clearArmed() => NotificationService.cancelArmed();
 }
 
 /// Riverpod access to the scheduler. Tests override the backend.
@@ -98,12 +110,14 @@ class AlarmScheduler {
     required String entryId,
     required String payload,
     required String soundId,
+    required String vibrationId,
   }) => NotificationDetails(
     android: alarmDetails(
       overrideMode: overrideMode,
       entryId: entryId,
       payload: payload,
       soundId: soundId,
+      vibrationId: vibrationId,
     ),
   );
 
@@ -129,7 +143,8 @@ class AlarmScheduler {
           overrideMode: _override(settings),
           entryId: alarm.id,
           payload: alarmPayload(alarm.id),
-          soundId: alarm.soundId,
+          soundId: settings.defaultSoundId,
+          vibrationId: settings.defaultVibId,
         ),
         payload: alarmPayload(alarm.id),
       ),
@@ -160,7 +175,8 @@ class AlarmScheduler {
           overrideMode: _override(settings),
           entryId: alarm.id,
           payload: alarmPayload(alarm.id),
-          soundId: alarm.soundId,
+          soundId: settings.defaultSoundId,
+          vibrationId: settings.defaultVibId,
         ),
         payload: alarmPayload(alarm.id),
       ),
@@ -193,11 +209,76 @@ class AlarmScheduler {
           entryId: timer.id,
           payload: timerPayload(timer.id),
           soundId: settings.defaultSoundId,
+          vibrationId: settings.defaultVibId,
         ),
         payload: timerPayload(timer.id),
       ),
     );
     return SyncOutcome.scheduled;
+  }
+
+  /// Earliest enabled fire, used for the silent "alarm armed" status notice.
+  ({tz.TZDateTime when, String label})? _nextArmed({
+    required List<Alarm> alarms,
+    required List<LarmTimer> timers,
+    required Settings settings,
+    required DateTime now,
+  }) {
+    final use24h = settings.timeFormat == 1;
+    ({tz.TZDateTime when, String label})? best;
+
+    void consider(tz.TZDateTime when, String label) {
+      if (best == null || when.isBefore(best!.when)) {
+        best = (when: when, label: label);
+      }
+    }
+
+    for (final alarm in alarms) {
+      if (!alarm.enabled) continue;
+      final next = nextOccurrence(alarm, fromUtc: now);
+      if (next == null) continue;
+      final name = alarm.title.trim().isEmpty ? 'Alarm' : alarm.title.trim();
+      consider(
+        next,
+        '$name · ${fmtDateTime(next, use24h: use24h)} UTC',
+      );
+    }
+    for (final timer in timers) {
+      final target = timer.targetUtc;
+      if (timer.status != TimerStatus.running ||
+          target == null ||
+          !target.toUtc().isAfter(now.toUtc())) {
+        continue;
+      }
+      final when = tz.TZDateTime.from(target.toUtc(), tz.UTC);
+      final name = timer.title.trim().isEmpty ? 'Timer' : timer.title.trim();
+      consider(
+        when,
+        '$name · ${fmtDateTime(when, use24h: use24h)} UTC',
+      );
+    }
+    return best;
+  }
+
+  /// Refreshes the visible status notice from the full stored state. Call after
+  /// any mutation so the shade never shows a stale or missing armed alarm.
+  Future<void> refreshArmed({
+    required List<Alarm> alarms,
+    required List<LarmTimer> timers,
+    required Settings settings,
+    required DateTime now,
+  }) async {
+    final next = _nextArmed(
+      alarms: alarms,
+      timers: timers,
+      settings: settings,
+      now: now,
+    );
+    if (next == null) {
+      await _backend.clearArmed();
+      return;
+    }
+    await _backend.updateArmed(title: 'Alarm armed', body: next.label);
   }
 
   /// Recomputes every slot. Runs on cold start (covers reboot, update, and
@@ -231,6 +312,12 @@ class AlarmScheduler {
           expired++;
       }
     }
+    await refreshArmed(
+      alarms: alarms,
+      timers: timers,
+      settings: settings,
+      now: now,
+    );
     return (scheduled: scheduled, cancelled: cancelled, expired: expired);
   }
 }

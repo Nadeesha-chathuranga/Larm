@@ -1,19 +1,23 @@
 # Play Console declarations — Larm (com.larm.larm)
 
-> Fill these into Play Console on first release. Verified against the M7
-> release APK (`aapt2 dump permissions` shows all seven permissions merged).
+> Fill these into Play Console on first release. Verified against the current
+> release APK (`aapt2 dump permissions` shows all eight permissions merged).
 
-## 1. Exact alarms (`SCHEDULE_EXACT_ALARM`)
+## 1. Exact alarms (`USE_EXACT_ALARM` + `SCHEDULE_EXACT_ALARM`)
 
 * Where: Policy declarations → Exact alarm permission.
 * Declare: core functionality **is** alarms/timers. Larm schedules user-set
   alarms and timers via `AlarmManager.setAlarmClock`
   (`AndroidScheduleMode.alarmClock`); inexact delivery would break the app's
   sole purpose.
-* Deliberately NOT declaring `USE_EXACT_ALARM` (auto-granted, Play-audited):
-  user-granted `SCHEDULE_EXACT_ALARM` is sufficient and lower-risk. If the
-  user denies, the app degrades to inexact + persistent "may delay" banner
-  (never crashes).
+* `USE_EXACT_ALARM` is auto-granted on Android 13+ for qualifying alarm apps.
+  Larm qualifies (its only function is user-set alarms/timers), so exact
+  firing does not depend on a user permission state some OEMs fail to surface.
+* `SCHEDULE_EXACT_ALARM` is declared only for Android 12 and older
+  (`android:maxSdkVersion="32"`), so a device never sees both permissions.
+  On Android 13+ the exact-alarm settings deep link is only a fallback. If
+  exact scheduling is ever unavailable, the app retries with
+  `inexactAllowWhileIdle` and shows a "may delay" banner.
 
 ## 2. Full-screen intent (`USE_FULL_SCREEN_INTENT`)
 

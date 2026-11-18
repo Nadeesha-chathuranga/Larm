@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/nav.dart';
@@ -55,8 +55,11 @@ class LarmApp extends ConsumerWidget {
             );
           case '/trigger':
             final args = triggerArgs;
+            // A fire is its own modal window above the dashboard, not a
+            // normal in-app page. Dismissing it reveals the previous route.
             return MaterialPageRoute(
               settings: routeSettings,
+              fullscreenDialog: true,
               builder: (_) => TriggerPage(
                 alarmId: args?['alarmId'] as String?,
                 timerId: args?['timerId'] as String?,

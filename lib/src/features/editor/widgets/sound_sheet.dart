@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:audioplayers/audioplayers.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../core/audio/sounds.dart';
@@ -74,7 +74,7 @@ class _SoundSheetState extends State<_SoundSheet> {
               children: [
                 const GlassIcon(
                   icon: LucideIcons.music2,
-                  color: LarmPalette.pink,
+                  color: LarmPalette.violet,
                 ),
                 const SizedBox(width: 12),
                 Text(

@@ -45,10 +45,10 @@ dependencies:
   uuid: ^4.6.0
   animations: ^2.0.11
   flutter_animate: ^4.5.0
-  rive: ^0.13.0
   lottie: ^3.1.0
   google_fonts: ^6.2.0
   lucide_icons_flutter: ^4.0.3
+  material_ui: ^1.11.1
 
 dev_dependencies:
   flutter_test:
@@ -73,7 +73,6 @@ flutter:
 
   assets:
     - assets/sounds/
-    - assets/rive/
     - assets/icon/
 
 # M6: launcher icon (Android-only MVP) from the B&W clock mark.

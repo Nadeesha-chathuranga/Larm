@@ -59,6 +59,38 @@ void main() {
     });
   });
 
+  group('fmtDateTime', () {
+    test('formats the UTC date and 24h time', () {
+      expect(
+        fmtDateTime(DateTime.utc(2026, 11, 20, 8, 5), use24h: true),
+        'Nov 20, 2026 · 08:05',
+      );
+    });
+
+    test('honors the 12h setting', () {
+      expect(
+        fmtDateTime(DateTime.utc(2026, 1, 2, 20, 5), use24h: false),
+        'Jan 2, 2026 · 8:05 PM',
+      );
+    });
+
+    test('oneTimeInstantUtc reads a dated one-time alarm', () {
+      expect(
+        oneTimeInstantUtc(
+          _alarm(
+            repeat: AlarmRepeat.oneTime,
+            year: 2099,
+            month: 1,
+            day: 2,
+            hour: 8,
+            minute: 5,
+          ),
+        ),
+        DateTime.utc(2099, 1, 2, 8, 5),
+      );
+    });
+  });
+
   group('nextOccurrence (UTC only)', () {
     test('daily later today stays today', () {
       final from = DateTime.utc(2026, 9, 17, 7, 0);

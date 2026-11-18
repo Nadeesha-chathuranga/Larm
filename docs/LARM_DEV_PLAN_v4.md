@@ -1,6 +1,6 @@
 # Larm v4 — Dev-Ready Spec (Android-only, complete build)
 
-> Locked: Flutter 3.47.4 / Dart 3.13.3 on `Nadee01`, Android-only MVP,
+> Locked: Flutter 3.50.0 / Dart 3.14.0 on `Nadee01`, Android-only MVP,
 > `SCHEDULE_EXACT_ALARM`, two-channel DND, hybrid analog+digital hero,
 > B&W-first + 6-theme pack, modern motion.
 > Repo: greenfield (`README`, `LICENSE`, `AGENTS.md` only) at time of writing.
@@ -337,14 +337,15 @@ Routes: `/` dashboard, `/editor?alarmId?`, `/trigger?fireId`, `/settings`.
 27. Title field (trim, max 60, empty → "Alarm")
 28. `Local|UTC` toggle + live conversion preview (e.g. "08:00 UTC = 13:30 local")
 29. `wheel_picker.dart`: 3× `ListWheelScrollView`, magnification, haptic, analog preview rotation
-30. Repeat chips `oneTime|daily|weekdays|custom[7]`; sound/vibration pickers with animated preview
+30. `UtcDatePicker` for one-time alarms; tone/vibration pickers live only in Settings (shared by every alarm/timer)
 31. Save → persist + schedule/cancel; timers also schedule `targetUtc`.
     Verify: `flutter test test/time_test.dart --plain-name "UTC fixed across DST"`,
     manual tz-travel (Local shifts, UTC fixed)
 
 ### M5 — Trigger (32-35)
 
-32. `trigger_page.dart`: pulsing rings + Rive bell (tinted), title/time scale-in
+32. `trigger_page.dart`: modal full-screen window with pulsing rings, an
+    oversized alarm name, UTC time, and a pill-shaped Cancel button
 33. Snooze (`now + snoozeMin`, enforce `snoozeCount`) + Cancel (reschedule if repeating)
 34. Sequential queue UI for simultaneous fires (unique IDs from M2)
 35. Verify (manual): locked/off/AOD, silent vs override channels

@@ -7,6 +7,7 @@ import 'package:timezone/timezone.dart' as tz;
 
 import 'src/app.dart';
 import 'src/core/notifications/scheduler.dart';
+import 'src/core/migration.dart';
 import 'src/core/prefs.dart';
 import 'src/core/notifications/service.dart';
 import 'src/data/models/alarm.dart';
@@ -37,6 +38,7 @@ Future<void> main() async {
   final initialSettings = loadSettings(settingsBox);
 
   await _migrateLegacyLocalAlarms(alarmBox);
+  await _migrateRepeatsToOneTime(alarmBox);
 
   await NotificationService.init();
 
@@ -86,4 +88,19 @@ Future<void> _migrateLegacyLocalAlarms(Box<Alarm> alarmBox) async {
   if (disabled > 0) {
     await prefs.setBool(legacyLocalDisabledKey, true);
   }
+}
+
+/// Repeats were removed: every alarm now fires once on a chosen UTC date.
+/// Existing repeating alarms keep their next fire time, then become one-time.
+Future<void> _migrateRepeatsToOneTime(Box<Alarm> alarmBox) async {
+  final prefs = await SharedPreferences.getInstance();
+  if (prefs.getBool(oneTimeMigrationKey) == true) return;
+
+  final now = DateTime.now().toUtc();
+  for (final alarm in alarmBox.values) {
+    final hasFutureSlot = convertRepeatingAlarmToOneTime(alarm, nowUtc: now);
+    if (!hasFutureSlot) alarm.enabled = false;
+    await alarm.save();
+  }
+  await prefs.setBool(oneTimeMigrationKey, true);
 }

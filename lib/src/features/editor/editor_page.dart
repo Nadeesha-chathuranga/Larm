@@ -1,13 +1,12 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
-import 'package:vibration/vibration.dart';
 
-import '../../core/audio/sounds.dart';
 import '../../core/haptics.dart';
 import '../../core/notifications/scheduler.dart';
+import '../../core/notifications/service.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/time/clock.dart';
 import '../../data/models/alarm.dart';
@@ -17,21 +16,10 @@ import '../../data/repos/alarm_repo.dart';
 import '../../data/repos/settings_repo.dart';
 import '../../data/repos/timer_repo.dart';
 import '../dashboard/widgets/analog_painter.dart';
-import 'widgets/sound_sheet.dart';
+import 'widgets/date_picker.dart';
 import 'widgets/wheel_picker.dart';
 
 enum _Kind { alarm, timer }
-
-const _dayShort = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-const _dayFull = [
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-  'Sunday',
-];
 
 /// Alarm + timer editor. Creates new entries or edits existing ones
 /// (resolved from constructor ids or route arguments).
@@ -58,10 +46,6 @@ class _EditorPageState extends ConsumerState<EditorPage> {
   int _hour = 8;
   int _minute = 0;
   DateTime _date = DateTime.now().toUtc();
-  int _repeat = AlarmRepeat.daily;
-  List<bool> _days = List<bool>.filled(7, false);
-  String _soundId = 'glass_chime';
-  String _vibId = 'short';
 
   int _tHour = 0;
   int _tMin = 5;
@@ -87,10 +71,6 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       timerId ??= args['timerId'] as String?;
     }
 
-    final settings = ref.read(settingsControllerProvider);
-    if (isKnownSound(settings.defaultSoundId)) {
-      _soundId = settings.defaultSoundId;
-    }
     final now = DateTime.now().toUtc();
     _hour = (now.hour + 1) % 24;
     _minute = 0;
@@ -107,14 +87,6 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         _minute = alarm.minute;
         if (alarm.year != null && alarm.month != null && alarm.day != null) {
           _date = DateTime.utc(alarm.year!, alarm.month!, alarm.day!);
-        }
-        _repeat = alarm.repeat;
-        _days = List<bool>.from(
-          alarm.days.length == 7 ? alarm.days : List.filled(7, false),
-        );
-        if (isKnownSound(alarm.soundId)) _soundId = alarm.soundId;
-        if (vibrationPatterns.any((p) => p.id == alarm.vibId)) {
-          _vibId = alarm.vibId;
         }
         return;
       }
@@ -140,32 +112,42 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     super.dispose();
   }
 
+  /// Sound and vibration are global Settings choices; stored per-alarm ids
+  /// are kept in Hive for schema stability but never authored here.
   Alarm _draftAlarm(String id) {
+    final settings = ref.read(settingsControllerProvider);
     return Alarm(
       id: id,
       title: _title.text.trim(),
       isUtc: true,
       hour: _hour,
       minute: _minute,
-      year: _repeat == AlarmRepeat.oneTime ? _date.year : null,
-      month: _repeat == AlarmRepeat.oneTime ? _date.month : null,
-      day: _repeat == AlarmRepeat.oneTime ? _date.day : null,
-      repeat: _repeat,
-      days: List<bool>.from(_days),
+      year: _date.year,
+      month: _date.month,
+      day: _date.day,
+      repeat: AlarmRepeat.oneTime,
+      days: List<bool>.filled(7, false),
       enabled: true,
-      soundId: _soundId,
-      vibId: _vibId,
+      soundId: settings.defaultSoundId,
+      vibId: settings.defaultVibId,
       createdAtUtc: DateTime.now().toUtc(),
     );
   }
 
-  Future<void> _saveAlarm() async {
-    if (_repeat == AlarmRepeat.custom && _days.every((d) => !d)) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Pick at least one day')));
-      return;
+  Future<void> _refreshArmed() async {
+    try {
+      await ref.read(schedulerProvider).refreshArmed(
+            alarms: ref.read(alarmRepositoryProvider).all(),
+            timers: ref.read(timerRepositoryProvider).all(),
+            settings: ref.read(settingsControllerProvider),
+            now: DateTime.now().toUtc(),
+          );
+    } catch (_) {
+      // Status-only; the fire schedule is already synced.
     }
+  }
+
+  Future<void> _saveAlarm() async {
     final repo = ref.read(alarmRepositoryProvider);
     final existing = _editAlarmId != null ? repo.getById(_editAlarmId!) : null;
     final alarm = _draftAlarm(existing?.id ?? _uuid.v4());
@@ -176,7 +158,9 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         ..createdAtUtc = existing.createdAtUtc;
     }
     await repo.upsert(alarm);
+    final permissionsOk = await NotificationService.ensureFirePermissions();
     SyncOutcome outcome = SyncOutcome.cancelled;
+    var schedulingOk = true;
     try {
       outcome = await ref
           .read(schedulerProvider)
@@ -186,10 +170,20 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             now: DateTime.now().toUtc(),
           );
     } catch (_) {
-      // Platform channels absent (tests/desktop): persistence already done.
+      schedulingOk = false;
     }
+    await _refreshArmed();
     if (!mounted) return;
-    if (outcome == SyncOutcome.expired) {
+    if (!permissionsOk || !schedulingOk) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Saved, but notifications or exact alarms are off. '
+            'Allow them to fire on time.',
+          ),
+        ),
+      );
+    } else if (outcome == SyncOutcome.expired) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Saved, but that time already passed')),
       );
@@ -232,16 +226,29 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       await repo.upsert(created);
       timer = await repo.start(created.id, now);
     }
+    final permissionsOk = await NotificationService.ensureFirePermissions();
+    var schedulingOk = true;
     if (timer != null) {
       try {
         await ref
             .read(schedulerProvider)
             .syncTimer(timer, ref.read(settingsControllerProvider), now: now);
       } catch (_) {
-        // Persistence already done; scheduling is best effort here.
+        schedulingOk = false;
       }
     }
+    await _refreshArmed();
     if (!mounted) return;
+    if (!permissionsOk || !schedulingOk) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Timer saved, but notifications or exact alarms are off. '
+            'Allow them to fire on time.',
+          ),
+        ),
+      );
+    }
     Navigator.pop(context);
   }
 
@@ -281,22 +288,9 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         }
       }
     }
+    await _refreshArmed();
     if (!mounted) return;
     Navigator.pop(context);
-  }
-
-  Future<void> _previewVibration() async {
-    final pattern = vibrationById(_vibId);
-    if (pattern.id == 'off') return;
-    try {
-      if (pattern.pattern.isEmpty) {
-        await Vibration.vibrate(duration: pattern.duration);
-      } else {
-        await Vibration.vibrate(pattern: pattern.pattern);
-      }
-    } catch (_) {
-      // No vibrator / no platform channel: silent no-op.
-    }
   }
 
   String _previewText(Settings settings) {
@@ -315,6 +309,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
         ? (_isTimer ? 'New timer' : 'New alarm')
         : (_isTimer ? 'Edit timer' : 'Edit alarm');
     return Scaffold(
+      backgroundColor: LarmPalette.backgroundDeep,
       appBar: AppBar(
         title: Text(title),
         actions: [
@@ -384,16 +379,6 @@ class _EditorPageState extends ConsumerState<EditorPage> {
 
   List<Widget> _alarmForm(BuildContext context, Settings settings) {
     final scheme = Theme.of(context).colorScheme;
-    final utcToday = DateTime.now().toUtc();
-    final dateItems = List<DateTime>.generate(
-      90,
-      (i) => DateTime.utc(utcToday.year, utcToday.month, utcToday.day + i),
-    );
-    var dateIndex = dateItems.indexWhere(
-      (d) =>
-          d.year == _date.year && d.month == _date.month && d.day == _date.day,
-    );
-    if (dateIndex < 0) dateIndex = 0;
     final previewTime = DateTime.utc(
       _date.year,
       _date.month,
@@ -403,13 +388,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     );
 
     return [
-      Row(
-        children: [
-          _sectionLabel(context, 'Time zone'),
-          const Spacer(),
-          const GlassPill(label: 'UTC', color: LarmPalette.cyan),
-        ],
-      ),
+      _sectionLabel(context, 'Time zone'),
       const SizedBox(height: 4),
       const Text(
         'This alarm fires at the UTC instant wherever you travel.',
@@ -418,7 +397,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       const SizedBox(height: 8),
       GlassCard(
         padding: const EdgeInsets.all(12),
-        accent: LarmPalette.mint,
+        accent: LarmPalette.cyan,
         glow: true,
         child: Row(
           children: [
@@ -437,26 +416,22 @@ class _EditorPageState extends ConsumerState<EditorPage> {
           ],
         ),
       ),
+      _sectionLabel(context, 'Date'),
+      UtcDatePicker(
+        selected: _date,
+        onChanged: (date) => setState(() => _date = date),
+      ),
       _sectionLabel(context, 'Time'),
       Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          if (_repeat == AlarmRepeat.oneTime)
-            WheelPicker<DateTime>(
-              key: const ValueKey('date-wheel'),
-              items: dateItems,
-              initialIndex: dateIndex,
-              onSelected: (i) => setState(() => _date = dateItems[i]),
-              label: (d) => DateFormat('EEE d').format(d),
-              width: 104,
-            ),
           WheelPicker<int>(
             key: const ValueKey('hour-wheel'),
             items: List<int>.generate(24, (i) => i),
             initialIndex: _hour,
             onSelected: (i) => setState(() => _hour = i),
             label: twoDigits,
-            width: 72,
+            width: 84,
           ),
           Text(':', style: Theme.of(context).textTheme.headlineMedium),
           WheelPicker<int>(
@@ -465,85 +440,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             initialIndex: _minute,
             onSelected: (i) => setState(() => _minute = i),
             label: twoDigits,
-            width: 72,
+            width: 84,
           ),
-        ],
-      ),
-      _sectionLabel(context, 'Repeat'),
-      Wrap(
-        spacing: 8,
-        children: [
-          _repeatChip('One-time', AlarmRepeat.oneTime),
-          _repeatChip('Daily', AlarmRepeat.daily),
-          _repeatChip('Weekdays', AlarmRepeat.weekdays),
-          _repeatChip('Custom', AlarmRepeat.custom),
-        ],
-      ),
-      if (_repeat == AlarmRepeat.custom) ...[
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          children: List<Widget>.generate(7, (i) {
-            final selected = _days[i];
-            return FilterChip(
-              label: Text(_dayShort[i]),
-              tooltip: _dayFull[i],
-              selected: selected,
-              onSelected: (next) async {
-                await hapticTap();
-                setState(() => _days[i] = next);
-              },
-            );
-          }),
-        ),
-      ],
-      _sectionLabel(context, 'Sound'),
-      GlassCard(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        accent: LarmPalette.pink,
-        glow: true,
-        child: ListTile(
-          leading: const GlassIcon(
-            icon: LucideIcons.music2,
-            color: LarmPalette.pink,
-          ),
-          title: Text(
-            _soundLabel(_soundId),
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          subtitle: Text(
-            _soundCategory(_soundId),
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          trailing: const Icon(LucideIcons.chevronRight),
-          onTap: () async {
-            await hapticTap();
-            if (!context.mounted) return;
-            final picked = await showSoundPickerSheet(
-              context,
-              currentId: _soundId,
-            );
-            if (picked != null && mounted) {
-              setState(() => _soundId = picked);
-            }
-          },
-        ),
-      ),
-      _sectionLabel(context, 'Vibration'),
-      Wrap(
-        spacing: 8,
-        children: [
-          for (final p in vibrationPatterns)
-            ChoiceChip(
-              label: Text(p.label),
-              selected: _vibId == p.id,
-              onSelected: (selected) async {
-                if (!selected) return;
-                await hapticTap();
-                setState(() => _vibId = p.id);
-                await _previewVibration();
-              },
-            ),
         ],
       ),
     ];
@@ -561,7 +459,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             initialIndex: _tHour.clamp(0, 23),
             onSelected: (i) => setState(() => _tHour = i),
             label: (v) => '${twoDigits(v)}h',
-            width: 88,
+            width: 96,
           ),
           WheelPicker<int>(
             key: const ValueKey('dur-minute-wheel'),
@@ -569,7 +467,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             initialIndex: _tMin.clamp(0, 59),
             onSelected: (i) => setState(() => _tMin = i),
             label: (v) => '${twoDigits(v)}m',
-            width: 88,
+            width: 96,
           ),
           WheelPicker<int>(
             key: const ValueKey('dur-second-wheel'),
@@ -577,7 +475,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             initialIndex: _tSec.clamp(0, 59),
             onSelected: (i) => setState(() => _tSec = i),
             label: (v) => '${twoDigits(v)}s',
-            width: 88,
+            width: 96,
           ),
         ],
       ),
@@ -600,22 +498,6 @@ class _EditorPageState extends ConsumerState<EditorPage> {
           color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
       ),
-    );
-  }
-
-  String _soundLabel(String id) => soundLabel(id);
-
-  String _soundCategory(String id) => soundCategory(id);
-
-  Widget _repeatChip(String label, int value) {
-    return ChoiceChip(
-      label: Text(label),
-      selected: _repeat == value,
-      onSelected: (selected) async {
-        if (!selected) return;
-        await hapticTap();
-        setState(() => _repeat = value);
-      },
     );
   }
 }
