@@ -15,6 +15,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/notifications/background_handler.dart'
     show parseAlarmAction, parseFirePayload;
 import '../../core/notifications/fire_handoff.dart';
+import '../../core/notifications/fire_state.dart';
 import '../../core/notifications/scheduler.dart';
 import '../../core/notifications/service.dart';
 import '../../core/time/clock.dart';
@@ -86,6 +87,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     WidgetsBinding.instance.addObserver(this);
     _startClock();
     _refreshPermissionStatus();
+    unawaited(_loadSnoozes());
   }
 
   @override
@@ -100,6 +102,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _startClock();
+      unawaited(_loadSnoozes());
       unawaited(_refreshArmed());
     } else {
       _stopClock();
@@ -295,6 +298,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
         timers: timers,
         settings: settings,
         now: DateTime.now().toUtc(),
+        snoozes: ref.read(snoozeStoreProvider),
       );
     } catch (_) {
       // Offline from platform channels (tests/desktop): ignore.
@@ -307,10 +311,40 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
             alarms: ref.read(alarmRepositoryProvider).all(),
             timers: ref.read(timerRepositoryProvider).all(),
             now: DateTime.now().toUtc(),
+            snoozes: ref.read(snoozeStoreProvider),
           );
     } catch (_) {
       // Status notice is best effort; the fire schedule is already synced.
     }
+  }
+
+  /// Reloads snooze metadata after a cold start or resume, dropping entries
+  /// whose alarm/timer was deleted or whose snooze instant already passed.
+  Future<void> _loadSnoozes() async {
+    try {
+      final notifier = ref.read(snoozeStoreProvider.notifier);
+      // main() already hydrated the store on cold start. Only fall back to
+      // SharedPreferences when the in-memory store is empty, so a test/app
+      // override is not clobbered and a second read is avoided on resume.
+      if (ref.read(snoozeStoreProvider).isEmpty) await notifier.load();
+      await _pruneSnoozes();
+      await _refreshArmed();
+    } catch (_) {
+      // Snooze badges and the shade countdown are status-only.
+    }
+  }
+
+  Future<void> _pruneSnoozes() async {
+    final now = DateTime.now().toUtc();
+    final alive = <String>{
+      for (final alarm in ref.read(alarmRepositoryProvider).all())
+        'alarm:${alarm.id}',
+      for (final timer in ref.read(timerRepositoryProvider).all())
+        'timer:${timer.id}',
+    };
+    await ref
+        .read(snoozeStoreProvider.notifier)
+        .prune(aliveKeys: alive, now: now);
   }
 
   Future<void> _toggleAlarm(Alarm alarm, bool on) async {
@@ -365,7 +399,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     } catch (_) {
       // Persistence already done; scheduling is best effort here.
     }
-    await _refreshArmed();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -381,6 +414,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
         ),
       ),
     );
+    // Status-only cleanup; never hold the undo snackbar behind SharedPreferences.
+    unawaited(_pruneSnoozes());
+    unawaited(_refreshArmed());
   }
 
   Future<void> _deleteTimer(LarmTimer timer) async {
@@ -402,7 +438,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     } catch (_) {
       // Persistence already done; scheduling is best effort here.
     }
-    await _refreshArmed();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -422,6 +457,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
         ),
       ),
     );
+    unawaited(_pruneSnoozes());
+    unawaited(_refreshArmed());
   }
 
   Future<void> _timerControl(Future<LarmTimer?> Function() action) async {
@@ -494,6 +531,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     final alarms = ref.read(alarmRepositoryProvider).all();
     final timerRepo = ref.read(timerRepositoryProvider);
     final timers = timerRepo.all();
+    final snoozes = ref.watch(snoozeStoreProvider);
 
     final utc = now.toUtc();
 
@@ -622,6 +660,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
                   child: AlarmTile(
                     alarm: alarms[i],
                     subtitle: _alarmSubtitle(alarms[i], utc),
+                    snoozeLabel: _snoozeTileLabel(
+                      'alarm',
+                      alarms[i].id,
+                      snoozes,
+                      utc,
+                    ),
                     onToggle: (on) => _toggleAlarm(alarms[i], on),
                     onTap: () => Navigator.pushNamed(
                       context,
@@ -654,6 +698,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
                   child: TimerTile(
                     title: timers[i].title,
                     remainingLabel: _remainingLabel(timers[i], utc),
+                    snoozeLabel: _snoozeTileLabel(
+                      'timer',
+                      timers[i].id,
+                      snoozes,
+                      utc,
+                    ),
                     status: timers[i].status,
                     onPause: () => _timerControl(
                       () => timerRepo.pause(timers[i].id, DateTime.now().toUtc()),
@@ -705,6 +755,20 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
         ],
       ),
     );
+  }
+
+  /// Tile badge for a snoozed fire. The native shade notice uses the same
+  /// wording so the dashboard and notification panel never disagree.
+  String? _snoozeTileLabel(
+    String kind,
+    String id,
+    Map<String, SnoozeInfo> snoozes,
+    DateTime utc,
+  ) {
+    final info = snoozes['$kind:$id'];
+    if (info == null || !info.untilUtc.isAfter(utc)) return null;
+    final countdown = armedCountdownLabel(info.untilUtc.difference(utc));
+    return '${snoozeRemainingLabel(info.remaining)} · $countdown';
   }
 
   String _alarmSubtitle(Alarm alarm, DateTime utc) {

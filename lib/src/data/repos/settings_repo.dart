@@ -39,6 +39,10 @@ class SettingsController extends StateNotifier<Settings> {
       _persist(state.copyWith(defaultSoundId: id));
   Future<void> updateDefaultVibration(String id) =>
       _persist(state.copyWith(defaultVibId: id));
+  Future<void> updateAlarmVolume(int value) =>
+      _persist(state.copyWith(alarmVolume: value.clamp(0, 100)));
+  Future<void> updateRingDuration(int seconds) =>
+      _persist(state.copyWith(ringDurationSec: seconds.clamp(5, 300)));
 }
 
 Settings loadSettings(Box<Settings> box) =>

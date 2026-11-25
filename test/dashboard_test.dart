@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 
 import 'package:larm/src/data/models/alarm.dart';
+import 'package:larm/src/core/notifications/fire_state.dart';
 import 'package:larm/src/core/notifications/service.dart';
 import 'package:larm/src/data/repos/alarm_repo.dart';
 import 'package:larm/src/features/dashboard/widgets/alarm_tile.dart';
@@ -100,6 +101,32 @@ void main() {
         isFalse,
       );
     });
+  });
+
+  testWidgets('snoozed alarm shows a badge in the alarm section', (
+    WidgetTester tester,
+  ) async {
+    await tester.runAsync(() async {
+      await tester.pumpWidget(
+        await dashboardScope(
+          dir: dir,
+          suffix: 'snooze',
+          alarms: [testAlarm(id: 'a1')],
+          snoozes: <String, SnoozeInfo>{
+            'alarm:a1': SnoozeInfo(
+              kind: 'alarm',
+              id: 'a1',
+              untilUtc: DateTime.now().toUtc().add(const Duration(minutes: 5)),
+              remaining: 2,
+            ),
+          },
+        ),
+      );
+      await tester.pump();
+    });
+
+    expect(find.text('Morning a1'), findsOneWidget);
+    expect(find.textContaining('Snoozed · 2 left'), findsOneWidget);
   });
 
   testWidgets('prompts when full-screen intent permission is off', (

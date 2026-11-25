@@ -8,6 +8,8 @@ import 'package:vibration/vibration.dart';
 import '../../core/audio/sounds.dart';
 import '../../core/haptics.dart';
 import '../../core/motion.dart';
+import '../../core/notifications/fire_launcher.dart';
+import '../../core/notifications/fire_state.dart';
 import '../../core/notifications/scheduler.dart';
 import '../../core/notifications/service.dart';
 import '../../core/theme/tokens.dart';
@@ -54,6 +56,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         timers: ref.read(timerRepositoryProvider).all(),
         settings: settings,
         now: DateTime.now().toUtc(),
+        snoozes: ref.read(snoozeStoreProvider),
       );
     } catch (_) {
       // Platform channels absent (tests/desktop): ignore.
@@ -64,6 +67,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   Future<void> _setDefaultSound(String id) async {
     await hapticTap();
     await ref.read(settingsControllerProvider.notifier).updateDefaultSound(id);
+    await _resyncAll();
+  }
+
+  /// Duration changes alter the notification timeout, so all slots are rebuilt.
+  Future<void> _setRingDuration(int seconds) async {
+    await hapticTap();
+    await ref
+        .read(settingsControllerProvider.notifier)
+        .updateRingDuration(seconds);
     await _resyncAll();
   }
 
@@ -166,12 +178,54 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           _group(
             context,
             children: [
+              _label(context, 'Ringing duration'),
+              Row(
+                children: [
+                  Expanded(
+                    child: Slider(
+                      value: settings.ringDurationSec.toDouble(),
+                      min: 5,
+                      max: 300,
+                      divisions: 59,
+                      label: '${settings.ringDurationSec}s',
+                      onChanged: (value) => unawaited(
+                        _setRingDuration(value.round()),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${settings.ringDurationSec}s',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ],
+              ),
+              Text(
+                'How long the sound and full-screen alert stay before the '
+                'ringing notification closes.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+          ),
+          _group(
+            context,
+            children: [
               _label(context, 'Alarm tone'),
-              _SoundPreviewBar(
+              _SoundVolumeBar(
                 soundId: settings.defaultSoundId,
+                volume: settings.alarmVolume,
                 onPreview: () => previewAlarmSound(
                   context,
                   settings.defaultSoundId,
+                  volume: settings.volumeFraction,
+                ),
+                onVolumeChanged: (value) async {
+                  await ref
+                      .read(settingsControllerProvider.notifier)
+                      .updateAlarmVolume(value.round());
+                },
+                onSystemVolume: () => unawaited(
+                  FireLauncher.openAlarmVolumeSettings(),
                 ),
               ),
               const SizedBox(height: 8),
@@ -200,6 +254,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     final picked = await showSoundPickerSheet(
                       context,
                       currentId: settings.defaultSoundId,
+                      volume: settings.volumeFraction,
                     );
                     if (picked != null && context.mounted) {
                       await _setDefaultSound(picked);
@@ -248,42 +303,76 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 }
 
-/// Compact selected-tone preview bar. The play button previews the same
-/// bundled WAV that will ring at fire time.
-class _SoundPreviewBar extends StatelessWidget {
-  const _SoundPreviewBar({required this.soundId, required this.onPreview});
+/// Selected-tone bar with a play button and the in-app volume slider.
+///
+/// Android does not allow an app to change the OS alarm stream volume, so the
+/// slider controls previews and the in-app fallback ring; the scheduled
+/// notification tone follows the system alarm volume. The button below opens
+/// that system setting.
+class _SoundVolumeBar extends StatelessWidget {
+  const _SoundVolumeBar({
+    required this.soundId,
+    required this.volume,
+    required this.onPreview,
+    required this.onVolumeChanged,
+    required this.onSystemVolume,
+  });
 
   final String soundId;
+  final int volume;
   final Future<void> Function() onPreview;
+  final ValueChanged<double> onVolumeChanged;
+  final VoidCallback onSystemVolume;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return GlassCard(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.fromLTRB(6, 2, 6, 4),
       accent: LarmPalette.cyan,
       glow: false,
-      child: ListTile(
-        dense: true,
-        leading: const GlassIcon(
-          icon: LucideIcons.play,
-          color: LarmPalette.cyan,
-          boxSize: 36,
-        ),
-        title: Text(
-          soundLabel(soundId),
-          style: theme.textTheme.titleMedium,
-        ),
-        subtitle: Text(
-          soundCategory(soundId),
-          style: theme.textTheme.bodySmall,
-        ),
-        trailing: IconButton(
-          tooltip: 'Preview ${soundLabel(soundId)}',
-          icon: const Icon(LucideIcons.volume2, color: LarmPalette.cyan),
-          onPressed: () => unawaited(onPreview()),
-        ),
-        onTap: () => unawaited(onPreview()),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            dense: true,
+            leading: const GlassIcon(
+              icon: LucideIcons.play,
+              color: LarmPalette.cyan,
+              boxSize: 36,
+            ),
+            title: Text(
+              soundLabel(soundId),
+              style: theme.textTheme.titleMedium,
+            ),
+            subtitle: Text(
+              '${soundCategory(soundId)} · $volume%',
+              style: theme.textTheme.bodySmall,
+            ),
+            trailing: IconButton(
+              tooltip: 'Preview ${soundLabel(soundId)}',
+              icon: const Icon(LucideIcons.volume2, color: LarmPalette.cyan),
+              onPressed: () => unawaited(onPreview()),
+            ),
+            onTap: () => unawaited(onPreview()),
+          ),
+          Slider(
+            value: volume / 100,
+            min: 0,
+            max: 1,
+            divisions: 20,
+            label: '$volume%',
+            onChanged: onVolumeChanged,
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              icon: const Icon(LucideIcons.settings2, size: 18),
+              label: const Text('System alarm volume'),
+              onPressed: onSystemVolume,
+            ),
+          ),
+        ],
       ),
     );
   }

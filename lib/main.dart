@@ -7,6 +7,7 @@ import 'package:timezone/timezone.dart' as tz;
 
 import 'src/app.dart';
 import 'src/core/notifications/fire_handoff.dart';
+import 'src/core/notifications/fire_state.dart';
 import 'src/core/notifications/scheduler.dart';
 import 'src/core/migration.dart';
 import 'src/core/prefs.dart';
@@ -40,6 +41,7 @@ Future<void> main() async {
 
   await _migrateLegacyLocalAlarms(alarmBox);
   await _migrateRepeatsToOneTime(alarmBox);
+  final initialSnoozes = await readSnoozes();
 
   await NotificationService.init();
 
@@ -52,6 +54,7 @@ Future<void> main() async {
       timers: timerBox.values.toList(),
       settings: initialSettings,
       now: DateTime.now().toUtc(),
+      snoozes: initialSnoozes,
     );
   } catch (_) {
     // Scheduling is best-effort until permissions are granted.
@@ -69,6 +72,9 @@ Future<void> main() async {
         settingsBoxProvider.overrideWithValue(settingsBox),
         settingsControllerProvider.overrideWith(
           (ref) => SettingsController(settingsBox, initialSettings),
+        ),
+        snoozeStoreProvider.overrideWith(
+          (ref) => SnoozeStore(initialSnoozes),
         ),
       ],
       child: LarmApp(initialFire: initialFire),

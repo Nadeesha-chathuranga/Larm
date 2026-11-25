@@ -10,6 +10,7 @@ import 'package:larm/src/app.dart';
 import 'package:larm/src/core/nav.dart';
 import 'package:larm/src/core/notifications/background_handler.dart';
 import 'package:larm/src/core/notifications/fire_handoff.dart';
+import 'package:larm/src/core/notifications/fire_state.dart';
 import 'package:larm/src/core/notifications/scheduler.dart';
 import 'package:larm/src/data/models/alarm.dart';
 import 'package:larm/src/data/models/larm_timer.dart';
@@ -37,7 +38,11 @@ class FakeBackend implements AlarmBackend {
   }
 
   @override
-  Future<void> updateArmed({required String title, required String body}) async {}
+  Future<void> updateArmed({
+    required String title,
+    required String body,
+    ArmedSnapshot? snapshot,
+  }) async {}
 
   @override
   Future<void> clearArmed() async {}
@@ -276,6 +281,7 @@ void main() {
 
   testWidgets('snooze reschedules in the same slot', (WidgetTester tester) async {
     final backend = FakeBackend();
+    late ProviderContainer container;
     await tester.runAsync(() async {
       await tester.pumpWidget(
         await triggerScope(
@@ -288,6 +294,9 @@ void main() {
       );
       await tester.pump();
       await spin(tester, 4);
+      container = ProviderScope.containerOf(
+        tester.element(find.text('Morning nap')),
+      );
       expect(find.text('2 snoozes left'), findsOneWidget);
 
       await tapVisible(tester, find.textContaining('Snooze'));
@@ -301,6 +310,11 @@ void main() {
     final delta =
         fires.single.when.toUtc().difference(DateTime.now().toUtc());
     expect(delta.inMinutes, inInclusiveRange(3, 6));
+    final snooze = container.read(snoozeStoreProvider)['alarm:nap'];
+    expect(snooze, isNotNull);
+    expect(snooze!.kind, 'alarm');
+    expect(snooze.remaining, 1);
+    expect(snooze.untilUtc.isAfter(DateTime.now().toUtc()), isTrue);
     expect(find.text('Morning nap'), findsNothing);
   });
 

@@ -8,6 +8,7 @@ import '../../data/models/larm_timer.dart';
 import '../../data/models/settings.dart';
 import 'channels.dart';
 import 'fire_launcher.dart';
+import 'fire_state.dart';
 import 'service.dart';
 
 /// One scheduled OS notification. Backend-agnostic so the scheduler is
@@ -20,6 +21,7 @@ class ScheduledFire {
     required this.when,
     required this.details,
     this.payload,
+    this.ringMs = alarmRingMs,
   });
 
   final int id;
@@ -28,6 +30,10 @@ class ScheduledFire {
   final tz.TZDateTime when;
   final NotificationDetails details;
   final String? payload;
+
+  /// How long the notification repeats before it is replaced by the silent
+  /// "rang" summary. Mirrors [Settings.ringDurationMs].
+  final int ringMs;
 }
 
 /// Platform scheduling sink. Production impl delegates to [NotificationService].
@@ -36,8 +42,13 @@ abstract class AlarmBackend {
   Future<void> cancel(int id);
 
   /// Optional status-notification hooks. Default no-ops keep test backends
-  /// simple; the production backend shows a silent "armed" notice.
-  Future<void> updateArmed({required String title, required String body}) async {}
+  /// simple; the production backend shows a silent "armed" notice and stores
+  /// [snapshot] for the native minute countdown ticker.
+  Future<void> updateArmed({
+    required String title,
+    required String body,
+    ArmedSnapshot? snapshot,
+  }) async {}
   Future<void> clearArmed() async {}
 }
 
@@ -58,6 +69,7 @@ class PluginBackend implements AlarmBackend {
       id: fire.id,
       when: fire.when,
       payload: fire.payload,
+      ringMs: fire.ringMs,
     );
   }
 
@@ -68,11 +80,23 @@ class PluginBackend implements AlarmBackend {
   }
 
   @override
-  Future<void> updateArmed({required String title, required String body}) =>
-      NotificationService.showArmed(title: title, body: body);
+  Future<void> updateArmed({
+    required String title,
+    required String body,
+    ArmedSnapshot? snapshot,
+  }) async {
+    await NotificationService.showArmed(title: title, body: body);
+    if (snapshot == null) return;
+    await writeArmedSnapshot(snapshot);
+    await FireLauncher.scheduleArmedTick(when: snapshot.whenUtc);
+  }
 
   @override
-  Future<void> clearArmed() => NotificationService.cancelArmed();
+  Future<void> clearArmed() async {
+    await NotificationService.cancelArmed();
+    await writeArmedSnapshot(null);
+    await FireLauncher.cancelArmedTick();
+  }
 }
 
 /// Riverpod access to the scheduler. Tests override the backend.
@@ -123,6 +147,7 @@ class AlarmScheduler {
     required String payload,
     required String soundId,
     required String vibrationId,
+    required int ringMs,
   }) => NotificationDetails(
     android: alarmDetails(
       overrideMode: overrideMode,
@@ -130,6 +155,7 @@ class AlarmScheduler {
       payload: payload,
       soundId: soundId,
       vibrationId: vibrationId,
+      ringMs: ringMs,
     ),
   );
 
@@ -157,8 +183,10 @@ class AlarmScheduler {
           payload: alarmPayload(alarm.id),
           soundId: settings.defaultSoundId,
           vibrationId: settings.defaultVibId,
+          ringMs: settings.ringDurationMs,
         ),
         payload: alarmPayload(alarm.id),
+        ringMs: settings.ringDurationMs,
       ),
     );
     return SyncOutcome.scheduled;
@@ -181,7 +209,7 @@ class AlarmScheduler {
       ScheduledFire(
         id: notificationIdForAlarm(alarm.id),
         title: alarm.title.isEmpty ? 'Alarm' : alarm.title,
-        body: 'Snoozed · ${_timeBody(when)}',
+        body: 'Snoozed · ${_timeBody(when)} · ${armedCountdownLabel(when.difference(tz.TZDateTime.from(now.toUtc(), tz.UTC)))}',
         when: when,
         details: _details(
           overrideMode: _override(settings),
@@ -189,8 +217,10 @@ class AlarmScheduler {
           payload: alarmPayload(alarm.id),
           soundId: settings.defaultSoundId,
           vibrationId: settings.defaultVibId,
+          ringMs: settings.ringDurationMs,
         ),
         payload: alarmPayload(alarm.id),
+        ringMs: settings.ringDurationMs,
       ),
     );
   }
@@ -222,17 +252,22 @@ class AlarmScheduler {
           payload: timerPayload(timer.id),
           soundId: settings.defaultSoundId,
           vibrationId: settings.defaultVibId,
+          ringMs: settings.ringDurationMs,
         ),
         payload: timerPayload(timer.id),
+        ringMs: settings.ringDurationMs,
       ),
     );
     return SyncOutcome.scheduled;
   }
 
   /// Earliest enabled fire, used for the silent "alarm armed" status notice.
+  /// Snoozed entries participate with their shifted UTC instant and a visible
+  /// `Snoozed · N left` prefix.
   ({tz.TZDateTime when, String label})? _nextArmed({
     required List<Alarm> alarms,
     required List<LarmTimer> timers,
+    required Map<String, SnoozeInfo> snoozes,
     required DateTime now,
   }) {
     ({tz.TZDateTime when, String label})? best;
@@ -241,6 +276,23 @@ class AlarmScheduler {
       if (best == null || when.isBefore(best!.when)) {
         best = (when: when, label: label);
       }
+    }
+
+    String nameFor(String kind, String id) {
+      if (kind == 'alarm') {
+        for (final alarm in alarms) {
+          if (alarm.id != id) continue;
+          final name = alarm.title.trim();
+          return name.isEmpty ? 'Alarm' : name;
+        }
+      } else {
+        for (final timer in timers) {
+          if (timer.id != id) continue;
+          final name = timer.title.trim();
+          return name.isEmpty ? 'Timer' : name;
+        }
+      }
+      return kind == 'alarm' ? 'Alarm' : 'Timer';
     }
 
     for (final alarm in alarms) {
@@ -267,26 +319,44 @@ class AlarmScheduler {
         '$name · ${fmtDateTime(when)} UTC',
       );
     }
+    for (final info in snoozes.values) {
+      if (!info.untilUtc.isAfter(now.toUtc())) continue;
+      final when = tz.TZDateTime.from(info.untilUtc, tz.UTC);
+      consider(
+        when,
+        '${snoozeRemainingLabel(info.remaining)} · ${nameFor(info.kind, info.id)} · ${fmtDateTime(when)} UTC',
+      );
+    }
     return best;
   }
 
   /// Refreshes the visible status notice from the full stored state. Call after
   /// any mutation so the shade never shows a stale or missing armed alarm.
+  /// Also writes the snapshot read by the native minute countdown ticker.
   Future<void> refreshArmed({
     required List<Alarm> alarms,
     required List<LarmTimer> timers,
     required DateTime now,
+    Map<String, SnoozeInfo> snoozes = const <String, SnoozeInfo>{},
   }) async {
     final next = _nextArmed(
       alarms: alarms,
       timers: timers,
+      snoozes: snoozes,
       now: now,
     );
     if (next == null) {
       await _backend.clearArmed();
       return;
     }
-    await _backend.updateArmed(title: 'Alarm armed', body: next.label);
+    final countdown = armedCountdownLabel(
+      next.when.difference(now.toUtc()),
+    );
+    await _backend.updateArmed(
+      title: 'Alarm armed',
+      body: '${next.label} · $countdown',
+      snapshot: ArmedSnapshot(whenUtc: next.when.toUtc(), label: next.label),
+    );
   }
 
   /// Recomputes every slot. Runs on cold start (covers reboot, update, and
@@ -296,6 +366,7 @@ class AlarmScheduler {
     required List<LarmTimer> timers,
     required Settings settings,
     required DateTime now,
+    Map<String, SnoozeInfo> snoozes = const <String, SnoozeInfo>{},
   }) async {
     var scheduled = 0;
     var cancelled = 0;
@@ -324,6 +395,7 @@ class AlarmScheduler {
       alarms: alarms,
       timers: timers,
       now: now,
+      snoozes: snoozes,
     );
     return (scheduled: scheduled, cancelled: cancelled, expired: expired);
   }

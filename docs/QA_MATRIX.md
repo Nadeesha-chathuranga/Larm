@@ -1,8 +1,10 @@
 # Device QA matrix — Larm Android MVP
 
-> Code-verified items are covered by unit tests (`test/time_test.dart`,
-> `test/scheduler_test.dart`). Everything below needs a physical Android 14+
-> device; emulator coverage is partial (no Doze/OEM behavior).
+> Code-verified items are covered by unit/widget tests (`test/time_test.dart`,
+> `test/scheduler_test.dart`, `test/fire_state_test.dart`,
+> `test/settings_test.dart`, `test/dashboard_test.dart`, `test/trigger_test.dart`).
+> Everything below needs a physical Android 14+ device; emulator coverage is
+> partial (no Doze/OEM behavior).
 
 ## Automated (done in CI-equivalent `flutter test`)
 
@@ -21,6 +23,15 @@
 * [x] Code-verified efficiency: no persistent foreground service or background
   polling; the dashboard's 1s ticker stops outside `resumed`, and ring audio /
   timers are disposed at page exit.
+* [x] Settings persist `alarmVolume` (0–100) and `ringDurationSec` (5–300,
+  default 10); the chosen duration reaches both `timeoutAfter` and the native
+  ring-end alarm.
+* [x] Snooze metadata and the armed snapshot round-trip through
+  SharedPreferences; stale/deleted snoozes are pruned.
+* [x] Armed shade body includes a minute-granular UTC countdown and a
+  `Snoozed · N left` prefix for snoozed fires.
+* [x] Dashboard tiles show the same amber snooze badge; taking a snoozed fire
+  consumes one remaining snooze.
 
 ## Manual — permissions (Android 14+, fresh install)
 
@@ -37,13 +48,16 @@
 ## Manual — firing
 
 * [ ] Saving an alarm or starting a timer shows a silent ongoing "Alarm armed"
-  notification with the closest UTC fire; it clears when neither remains and
-  after the app resumes following the last fire.
+  notification with the closest UTC fire and a live countdown (`in 5m`,
+  `in 2h 7m`, `in <1m`); it clears when neither remains and after the app
+  resumes following the last fire. The shade countdown advances while the app
+  is killed (native minute ticker).
 * [ ] Locked screen + screen off + AOD: full-screen ringing window with rings,
   large alarm name, 24-hour UTC time, Snooze/Cancel — no dashboard flash on a
   cold start.
 * [ ] Unlocked + in use: alarm-style heads-up notification sounds/repeats for
-  ~10s; no app page opens unless the notification or an action is tapped.
+  the configured ring duration (default 10s); no app page opens unless the
+  notification or an action is tapped.
 * [ ] Unlocked + backgrounded: notification-only fire; returning to Larm shows
   the refreshed armed notice, not a stale fired alarm.
 * [ ] Silent mode + DND, follow mode: no sound, notification present.
@@ -51,6 +65,14 @@
 * [ ] Two alarms same minute: stack as sequential trigger routes; popping
   the top reveals the next.
 * [ ] Notification Cancel/Snooze action buttons work from lock shade.
+* [ ] A snoozed alarm/timer gets an amber badge in the dashboard's alarm/timer
+  section with remaining snoozes and countdown; the "Alarm armed" shade body
+  shows the same UTC instant and `Snoozed · N left`.
+* [ ] Reaching the configured ring duration without action closes the ringing
+  notification and full-screen page; a silent "Alarm rang at HH:mm UTC" notice
+  remains until tapped/swiped, and Larm stays minimized.
+* [ ] Cancel or Snooze after a fire closes the full-screen page, cancels the
+  ringing notification, and leaves Larm minimized — no page reappears.
 * [ ] Locked cold start: companion FSI writes the fire to Flutter's pending
   queue and the ringing page is the first visible route.
 * [ ] Killed-app notification action opens the page and applies Stop/Snooze
@@ -86,7 +108,11 @@
 * [ ] Lucide icons and the subtle hero UTC hint are legible on small screens;
   every displayed time uses 24-hour `HH:mm`.
 * [ ] Settings is single-level and the Alarm tone section has a named preview
-  bar whose play button previews the selected bundled tone.
+  bar with a play button, an in-app volume slider (0–100%), and a
+  `System alarm volume` shortcut. The slider changes previews and the in-app
+  fallback ring; the scheduled notification follows Android's alarm stream.
+* [ ] `Ringing duration` slider offers 5–300s and defaults to 10s; changing it
+  reschedules enabled alarms/timers.
 * [ ] All 10 Popular tones preview in-app and play through their notification
   channels when used as the global alarm tone.
 * [x] Earlier build verified (2026-11-25): fire sound repeated for ~10s via
@@ -137,6 +163,10 @@
 * [x] `flutter build apk --release` succeeds (2026-11-18: 58.1MB, debug-signed).
 * [x] `flutter analyze`, full `flutter test`, and `flutter build apk --debug`
   pass after the screen-aware fire / compact UI changes (2026-11-25).
-* [ ] Complete the revised on-device QA pass above (USB debugging authorization
-  is still pending on `RZCW100088D`).
+* [x] `flutter analyze`, full `flutter test`, and `flutter build apk --debug`
+  pass after the volume / snooze visibility / ring-duration / countdown /
+  auto-close changes (2026-11-25).
+* [ ] Complete the revised on-device QA pass above on `RZCW100088D` (USB
+  debugging is authorized and the debug APK installs; new fire behavior not yet
+  exercised on device).
 * [ ] Sign with upload key, fill Play declarations (`PLAY_DECLARATIONS.md`).

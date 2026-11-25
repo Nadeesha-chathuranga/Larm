@@ -24,14 +24,16 @@ class SettingsAdapter extends TypeAdapter<Settings> {
       family: (fields[4] as num).toInt(),
       timeFormat: (fields[5] as num).toInt(),
       defaultSoundId: fields[6] as String,
-      defaultVibId: fields[7] as String? ?? 'short',
+      defaultVibId: fields[7] == null ? 'short' : fields[7] as String,
+      alarmVolume: fields[8] == null ? 100 : (fields[8] as num).toInt(),
+      ringDurationSec: fields[9] == null ? 10 : (fields[9] as num).toInt(),
     );
   }
 
   @override
   void write(BinaryWriter writer, Settings obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.soundMode)
       ..writeByte(1)
@@ -47,7 +49,11 @@ class SettingsAdapter extends TypeAdapter<Settings> {
       ..writeByte(6)
       ..write(obj.defaultSoundId)
       ..writeByte(7)
-      ..write(obj.defaultVibId);
+      ..write(obj.defaultVibId)
+      ..writeByte(8)
+      ..write(obj.alarmVolume)
+      ..writeByte(9)
+      ..write(obj.ringDurationSec);
   }
 
   @override

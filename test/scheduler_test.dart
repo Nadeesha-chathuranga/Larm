@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:larm/src/core/notifications/background_handler.dart';
 import 'package:larm/src/core/notifications/channels.dart';
+import 'package:larm/src/core/notifications/fire_state.dart';
 import 'package:larm/src/core/notifications/scheduler.dart';
 import 'package:larm/src/data/models/alarm.dart';
 import 'package:larm/src/data/models/larm_timer.dart';
@@ -12,6 +13,7 @@ class InMemoryBackend implements AlarmBackend {
   final scheduled = <ScheduledFire>[];
   final cancelled = <int>[];
   final armed = <({String title, String body})>[];
+  final snapshots = <ArmedSnapshot>[];
   bool armedCleared = false;
 
   @override
@@ -25,8 +27,13 @@ class InMemoryBackend implements AlarmBackend {
   }
 
   @override
-  Future<void> updateArmed({required String title, required String body}) async {
+  Future<void> updateArmed({
+    required String title,
+    required String body,
+    ArmedSnapshot? snapshot,
+  }) async {
     armed.add((title: title, body: body));
+    if (snapshot != null) snapshots.add(snapshot);
     armedCleared = false;
   }
 
@@ -129,6 +136,19 @@ void main() {
         expect(fire.details.android?.actions?.length, 2);
       },
     );
+
+    test('configured ring duration reaches the notification and native fire',
+        () async {
+      final backend = InMemoryBackend();
+      await AlarmScheduler(backend: backend).syncAlarm(
+        _alarm(),
+        Settings.defaults().copyWith(ringDurationSec: 45),
+        now: DateTime.utc(2026, 9, 17, 7, 0),
+      );
+      final fire = backend.scheduled.single;
+      expect(fire.ringMs, 45_000);
+      expect(fire.details.android?.timeoutAfter, 45_000);
+    });
 
     test('override mode picks bypass channel', () async {
       final backend = InMemoryBackend();
@@ -235,6 +255,9 @@ void main() {
       final fire = backend.scheduled.single;
       expect(fire.id, AlarmScheduler.notificationIdForAlarm('a1'));
       expect(fire.when, tz.TZDateTime.utc(2026, 9, 17, 7, 10));
+      expect(fire.body, contains('Snoozed'));
+      expect(fire.body, contains('07:10'));
+      expect(fire.body, contains('in 10m'));
     });
 
     test('snooze uses the global tone, not a legacy per-alarm tone', () async {
@@ -331,6 +354,34 @@ void main() {
       expect(backend.armed.single.title, 'Alarm armed');
       expect(backend.armed.single.body, contains('Morning'));
       expect(backend.armed.single.body, contains('08:00 UTC'));
+      expect(backend.armed.single.body, contains('in 1h 0m'));
+      expect(backend.snapshots, hasLength(1));
+      expect(backend.snapshots.single.whenUtc, DateTime.utc(2026, 9, 17, 8));
+    });
+
+    test('armed status notice includes snoozed fires and their countdown',
+        () async {
+      final backend = InMemoryBackend();
+      final snoozes = <String, SnoozeInfo>{
+        'timer:t1': SnoozeInfo(
+          kind: 'timer',
+          id: 't1',
+          untilUtc: DateTime.utc(2026, 9, 17, 7, 5),
+          remaining: 2,
+        ),
+      };
+      await AlarmScheduler(backend: backend).syncAll(
+        alarms: [_alarm()],
+        timers: [_timer(id: 't1', status: TimerStatus.paused)],
+        settings: Settings.defaults(),
+        now: DateTime.utc(2026, 9, 17, 7, 0),
+        snoozes: snoozes,
+      );
+      expect(backend.armed, hasLength(1));
+      expect(backend.armed.single.body, contains('Snoozed · 2 left'));
+      expect(backend.armed.single.body, contains('Pasta'));
+      expect(backend.armed.single.body, contains('in 5m'));
+      expect(backend.snapshots.single.whenUtc, DateTime.utc(2026, 9, 17, 7, 5));
     });
 
     test('clears the armed notice when nothing is enabled', () async {
@@ -358,6 +409,22 @@ void main() {
       expect(details.timeoutAfter, alarmRingMs);
       expect(details.additionalFlags, isNotNull);
       expect(details.additionalFlags!.contains(insistentNotificationFlag), isTrue);
+    });
+
+    test('honors the configured ring duration', () {
+      final details = alarmDetails(
+        overrideMode: false,
+        entryId: 'a1',
+        payload: 'alarm:a1',
+        soundId: 'glass_chime',
+        vibrationId: 'short',
+        ringMs: 45_000,
+      );
+      expect(details.timeoutAfter, 45_000);
+      expect(
+        details.additionalFlags!.contains(insistentNotificationFlag),
+        isTrue,
+      );
     });
   });
 

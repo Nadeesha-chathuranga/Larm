@@ -7,6 +7,9 @@ part 'settings.g.dart';
 /// timeFormat: retained for Hive schema stability, but ignored — Larm is
 /// always 24-hour now.
 /// family: index into [LarmThemeFamily] (default 0 = mono).
+/// alarmVolume: 0–100 slider for tone previews and the in-app fallback ring.
+/// The OS notification tone still follows Android's alarm volume.
+/// ringDurationSec: how long a fire rings before the notification/FSI closes.
 @HiveType(typeId: 2)
 class Settings extends HiveObject {
   Settings({
@@ -17,7 +20,9 @@ class Settings extends HiveObject {
     required this.family,
     required this.timeFormat,
     required this.defaultSoundId,
-    required this.defaultVibId,
+    this.defaultVibId = 'short',
+    this.alarmVolume = 100,
+    this.ringDurationSec = 10,
   });
 
   factory Settings.defaults() => Settings(
@@ -57,6 +62,18 @@ class Settings extends HiveObject {
   @HiveField(7)
   String defaultVibId;
 
+  @HiveField(8)
+  int alarmVolume;
+
+  @HiveField(9)
+  int ringDurationSec;
+
+  /// Fraction passed to `AudioPlayer.setVolume` for previews and in-app ring.
+  double get volumeFraction => (alarmVolume.clamp(0, 100) / 100).toDouble();
+
+  /// Native notification timeout. Clamped to the Settings range.
+  int get ringDurationMs => ringDurationSec.clamp(5, 300) * 1000;
+
   Settings copyWith({
     int? soundMode,
     int? snoozeMin,
@@ -66,6 +83,8 @@ class Settings extends HiveObject {
     int? timeFormat,
     String? defaultSoundId,
     String? defaultVibId,
+    int? alarmVolume,
+    int? ringDurationSec,
   }) {
     return Settings(
       soundMode: soundMode ?? this.soundMode,
@@ -76,6 +95,8 @@ class Settings extends HiveObject {
       timeFormat: timeFormat ?? this.timeFormat,
       defaultSoundId: defaultSoundId ?? this.defaultSoundId,
       defaultVibId: defaultVibId ?? this.defaultVibId,
+      alarmVolume: alarmVolume ?? this.alarmVolume,
+      ringDurationSec: ringDurationSec ?? this.ringDurationSec,
     );
   }
 }

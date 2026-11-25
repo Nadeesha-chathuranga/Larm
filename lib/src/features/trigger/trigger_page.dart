@@ -14,6 +14,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/notifications/channels.dart';
 import '../../core/notifications/fire_handoff.dart';
 import '../../core/notifications/fire_launcher.dart';
+import '../../core/notifications/fire_state.dart';
 import '../../core/notifications/scheduler.dart';
 import '../../core/time/clock.dart';
 import '../../data/models/alarm.dart';
@@ -60,8 +61,10 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
 
   AudioPlayer? _ringPlayer;
   Timer? _ringTimer;
-  Timer? _armedTimer;
+  Timer? _autoCloseTimer;
   bool _ringStarted = false;
+  int _ringMs = alarmRingMs;
+  double _volume = 1;
   StreamSubscription<PendingFire>? _actionSub;
 
   @override
@@ -81,13 +84,34 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
       final rawRemaining = args['snoozeRemaining'];
       if (rawRemaining is int) remaining = rawRemaining;
     }
+    final explicitRemaining =
+        widget.snoozeRemaining != null || remaining != null;
     _remaining =
         widget.snoozeRemaining ??
         remaining ??
         ref.read(settingsControllerProvider).snoozeCount;
 
-    // A late notification action must act on this page, not push a duplicate.
+    final settings = ref.read(settingsControllerProvider);
+    _ringMs = settings.ringDurationMs;
+    _volume = settings.volumeFraction;
+
+    // A snoozed fire carries its own remaining count; clear the badge now that
+    // the delayed fire is actually on screen.
     final key = _timerId != null ? 'timer:$_timerId' : 'alarm:$_alarmId';
+    if (!explicitRemaining) {
+      final info = ref.read(snoozeStoreProvider)[key];
+      if (info != null) {
+        _remaining = info.remaining;
+        unawaited(
+          ref.read(snoozeStoreProvider.notifier).remove(
+                info.kind,
+                info.id,
+              ),
+        );
+      }
+    }
+
+    // A late notification action must act on this page, not push a duplicate.
     _actionSub = FireHandoff.liveActions.listen((fire) {
       if (!mounted || _handled) return;
       if ('${fire.kind}:${fire.id}' != key) return;
@@ -99,13 +123,7 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
     });
 
     _buzz();
-    _watchNotificationSound();
-    // After the ring window the notification is gone. Refresh the shade even
-    // if the user leaves this page without pressing Stop/Snooze.
-    _armedTimer = Timer(
-      Duration(milliseconds: alarmRingMs + 500),
-      () => unawaited(_refreshArmedStatus()),
-    );
+    unawaited(_startRingLifecycle());
     final auto = _autoAction;
     if (auto == 'stop') {
       WidgetsBinding.instance.addPostFrameCallback((_) => _stop());
@@ -131,18 +149,29 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
     }
   }
 
+  /// Starts the shared ring lifecycle from the real OS fire instant: an
+  /// in-app audio fallback if the OEM dropped the notification, and an
+  /// auto-close at the configured ring duration. Both use [lastFireAt] so a
+  /// late UI mount does not extend the alarm beyond its notification window.
+  Future<void> _startRingLifecycle() async {
+    final started = await FireLauncher.lastFireAt() ?? DateTime.now().toUtc();
+    if (!mounted) return;
+    _watchNotificationSound(started);
+    final elapsed = DateTime.now().difference(started).inMilliseconds;
+    final delay = (_ringMs - elapsed).clamp(0, _ringMs);
+    _autoCloseTimer = Timer(Duration(milliseconds: delay), _autoClose);
+  }
+
   /// The notification normally loops the tone with `FLAG_INSISTENT`. Some OEMs
   /// dismiss it as soon as the full-screen intent is consumed, so continue the
-  /// same tone in-app for the rest of the 10-second ring window.
-  Future<void> _watchNotificationSound() async {
+  /// same tone in-app for the rest of the configured ring window.
+  void _watchNotificationSound(DateTime started) {
     final alarmId = _alarmId;
     final timerId = _timerId;
     if (alarmId == null && timerId == null) return;
     final notificationId = alarmId != null
         ? AlarmScheduler.notificationIdForAlarm(alarmId)
         : AlarmScheduler.notificationIdForTimer(timerId!);
-    final started = await FireLauncher.lastFireAt() ?? DateTime.now();
-    if (!mounted) return;
     _ringTimer = Timer.periodic(
       const Duration(milliseconds: 400),
       (timer) async {
@@ -150,7 +179,7 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
           timer.cancel();
           return;
         }
-        if (DateTime.now().difference(started).inMilliseconds >= alarmRingMs) {
+        if (DateTime.now().difference(started).inMilliseconds >= _ringMs) {
           timer.cancel();
           return;
         }
@@ -169,15 +198,16 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
   }
 
   Future<void> _startRingAudio(DateTime started) async {
-    final remaining =
-        alarmRingMs - DateTime.now().difference(started).inMilliseconds;
+    final remaining = _ringMs - DateTime.now().difference(started).inMilliseconds;
     if (remaining <= 0) return;
     final selected = ref.read(settingsControllerProvider).defaultSoundId;
-    final sound =
-        selected != 'system' && isKnownSound(selected) ? selected : 'classic_chime';
+    final sound = selected != 'system' && isKnownSound(selected)
+        ? selected
+        : 'classic_chime';
     try {
       final player = AudioPlayer();
       await player.setReleaseMode(ReleaseMode.loop);
+      await player.setVolume(_volume);
       await player.play(AssetSource('sounds/$sound.wav'));
       if (!mounted) {
         unawaited(player.stop());
@@ -205,7 +235,7 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
   @override
   void dispose() {
     _actionSub?.cancel();
-    _armedTimer?.cancel();
+    _autoCloseTimer?.cancel();
     _stopRingAudio();
     super.dispose();
   }
@@ -220,12 +250,41 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
 
   bool get _isTimer => _timerId != null;
 
+  String? get _payload {
+    if (_alarmId != null) return alarmPayload(_alarmId!);
+    if (_timerId != null) return timerPayload(_timerId!);
+    return null;
+  }
+
+  int? get _notificationId {
+    if (_alarmId != null) {
+      return AlarmScheduler.notificationIdForAlarm(_alarmId!);
+    }
+    if (_timerId != null) {
+      return AlarmScheduler.notificationIdForTimer(_timerId!);
+    }
+    return null;
+  }
+
+  /// Closes the ringing notification and full-screen handoff, replaces them
+  /// with the silent "rang at …" summary, and returns Larm to the background.
+  /// Safe to call from Stop, Snooze and the ring-duration auto-close.
+  Future<void> _closeNativeRing() async {
+    final id = _notificationId;
+    final payload = _payload;
+    if (id == null || payload == null) return;
+    final at = await FireLauncher.lastFireAt() ?? DateTime.now().toUtc();
+    await FireLauncher.finishRing(id: id, payload: payload, at: at);
+    await FireLauncher.minimize();
+  }
+
   /// Runs [effect] once, then closes this fire (revealing any stacked next).
   /// Uses [Navigator.maybePop]: the page is normally pushed, but never trap
   /// the user if it ever ends up as the root route.
   Future<void> _finish(Future<void> Function() effect) async {
     if (_handled) return;
     _handled = true;
+    _autoCloseTimer?.cancel();
     try {
       await effect();
     } catch (_) {
@@ -235,12 +294,17 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
     if (mounted) Navigator.maybePop(context);
   }
 
+  /// The OS notification times itself out, but the Flutter page still needs
+  /// to close when no action was taken (and the OS may not cancel its FSI).
+  Future<void> _autoClose() => _finish(_closeNativeRing);
+
   Future<void> _refreshArmedStatus() async {
     try {
       await ref.read(schedulerProvider).refreshArmed(
             alarms: ref.read(alarmRepositoryProvider).all(),
             timers: ref.read(timerRepositoryProvider).all(),
             now: DateTime.now().toUtc(),
+            snoozes: ref.read(snoozeStoreProvider),
           );
     } catch (_) {
       // Status-only; never break the fire action or the ringing UI.
@@ -274,6 +338,7 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
         await scheduler.syncAlarm(alarm, settings, now: now);
       }
     }
+    await _closeNativeRing();
   });
 
   Future<void> _snooze() => _finish(() async {
@@ -301,6 +366,15 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
         remaining: _remaining,
       );
     }
+    await ref.read(snoozeStoreProvider.notifier).set(
+          SnoozeInfo(
+            kind: _isTimer ? 'timer' : 'alarm',
+            id: _isTimer ? _timerId! : _alarmId!,
+            untilUtc: now.toUtc().add(Duration(minutes: settings.snoozeMin)),
+            remaining: _remaining - 1,
+          ),
+        );
+    await _closeNativeRing();
   });
 
   @override

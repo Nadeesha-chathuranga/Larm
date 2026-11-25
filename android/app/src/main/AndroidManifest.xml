@@ -56,6 +56,15 @@
         <receiver
             android:name=".FireLaunchBridgeReceiver"
             android:exported="false" />
+        <!-- Closes the ringing notification after the configured duration and
+             leaves the silent "alarm rang" summary in the shade. -->
+        <receiver
+            android:name=".RingEndReceiver"
+            android:exported="false" />
+        <!-- Minute ticker that refreshes the armed-notification countdown. -->
+        <receiver
+            android:name=".ArmedTickReceiver"
+            android:exported="false" />
         <!-- Short-lived retry for the locked-screen handoff; the FSI is the
              supported path when Larm has no visible window. -->
         <service

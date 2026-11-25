@@ -13,12 +13,18 @@ import '../../core/audio/sounds.dart';
 const String larmFollowV2 = 'larm_follow_v2';
 const String larmOverrideV2 = 'larm_override_v2';
 const String larmArmedV2 = 'larm_armed_v2';
+const String larmRangV2 = 'larm_rang_v2';
 
 /// Bundled tones are 2.4–4s. `FLAG_INSISTENT` (4) makes Android repeat the
 /// channel sound until the notification is cancelled; `timeoutAfter` closes
-/// that ring window after ~10s. The ringing page stays open for snooze/stop.
+/// that ring window after the configured duration (default ~10s). A silent
+/// summary replaces it so the user can still see that the alarm went off.
 const int alarmRingMs = 10 * 1000;
 const int insistentNotificationFlag = 4; // Notification.FLAG_INSISTENT
+
+/// Dedicated id for the silent "alarm rang at …" notice posted when the ring
+/// window closes. Kept apart from fire ids so the summary survives until tap.
+const int rangNotificationId = 0x52414E47;
 
 String toneChannelId(String soundId) => 'larm_tone_${soundId}_v2';
 
@@ -42,6 +48,15 @@ List<AndroidNotificationChannel> v2Channels() => [
         larmArmedV2,
         'Alarm status',
         description: 'Silent ongoing notice showing the next armed alarm.',
+        importance: Importance.low,
+        playSound: false,
+        enableVibration: false,
+        showBadge: false,
+      ),
+      const AndroidNotificationChannel(
+        larmRangV2,
+        'Alarm rang',
+        description: 'Silent reminder that an alarm or timer went off.',
         importance: Importance.low,
         playSound: false,
         enableVibration: false,
@@ -102,6 +117,7 @@ AndroidNotificationDetails alarmDetails({
   required String payload,
   required String soundId,
   required String vibrationId,
+  int ringMs = alarmRingMs,
 }) {
   final channelId =
       channelFor(overrideMode: overrideMode, soundId: soundId);
@@ -127,7 +143,7 @@ AndroidNotificationDetails alarmDetails({
     enableVibration: !vibrationOff,
     vibrationPattern: vibrationOff ? null : vibrationPattern,
     audioAttributesUsage: AudioAttributesUsage.alarm,
-    timeoutAfter: alarmRingMs,
+    timeoutAfter: ringMs,
     additionalFlags: Int32List.fromList(const [insistentNotificationFlag]),
     actions: [
       AndroidNotificationAction(

@@ -10,7 +10,12 @@ import '../../../core/theme/tokens.dart';
 
 /// Plays the selected bundled tone once. Shared by the picker and the
 /// Settings preview bar so both use the same assets and error handling.
-Future<void> previewAlarmSound(BuildContext context, String id) async {
+/// [volume] is a 0..1 fraction from the Settings alarm-volume slider.
+Future<void> previewAlarmSound(
+  BuildContext context,
+  String id, {
+  double volume = 1,
+}) async {
   await hapticTap();
   if (id == 'system') {
     if (!context.mounted) return;
@@ -21,6 +26,7 @@ Future<void> previewAlarmSound(BuildContext context, String id) async {
   }
   try {
     final player = AudioPlayer();
+    await player.setVolume(volume.clamp(0.0, 1.0));
     unawaited(player.onPlayerComplete.first.then((_) => player.dispose()));
     await player.play(AssetSource('sounds/$id.wav'));
   } catch (_) {
@@ -37,18 +43,20 @@ Future<void> previewAlarmSound(BuildContext context, String id) async {
 Future<String?> showSoundPickerSheet(
   BuildContext context, {
   required String currentId,
+  double volume = 1,
 }) {
   return showModalBottomSheet<String>(
     context: context,
     showDragHandle: true,
-    builder: (context) => _SoundSheet(currentId: currentId),
+    builder: (context) => _SoundSheet(currentId: currentId, volume: volume),
   );
 }
 
 class _SoundSheet extends StatefulWidget {
-  const _SoundSheet({required this.currentId});
+  const _SoundSheet({required this.currentId, required this.volume});
 
   final String currentId;
+  final double volume;
 
   @override
   State<_SoundSheet> createState() => _SoundSheetState();
@@ -57,7 +65,8 @@ class _SoundSheet extends StatefulWidget {
 class _SoundSheetState extends State<_SoundSheet> {
   late String _selected = widget.currentId;
 
-  Future<void> _preview(String id) => previewAlarmSound(context, id);
+  Future<void> _preview(String id) =>
+      previewAlarmSound(context, id, volume: widget.volume);
 
   @override
   Widget build(BuildContext context) {

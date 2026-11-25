@@ -72,10 +72,13 @@ void main() {
 
     test('v2 set has status + follow + 22 tones + override with bypass', () {
       final channels = v2Channels();
-      expect(channels, hasLength(25));
+      expect(channels, hasLength(26));
       final armed = channels.singleWhere((c) => c.id == larmArmedV2);
       expect(armed.playSound, isFalse);
       expect(armed.enableVibration, isFalse);
+      final rang = channels.singleWhere((c) => c.id == larmRangV2);
+      expect(rang.playSound, isFalse);
+      expect(rang.enableVibration, isFalse);
       final override = channels.singleWhere((c) => c.id == larmOverrideV2);
       expect(override.bypassDnd, isTrue);
       expect(override.importance, isNotNull);
@@ -161,6 +164,8 @@ void main() {
       await controller.updateTimeFormat(1);
       await controller.updateDefaultSound('zen_bowl');
       await controller.updateDefaultVibration('double');
+      await controller.updateAlarmVolume(70);
+      await controller.updateRingDuration(45);
 
       final box = container.read(settingsBoxProvider);
       final reloaded = loadSettings(box);
@@ -172,6 +177,10 @@ void main() {
       expect(reloaded.timeFormat, 1);
       expect(reloaded.defaultSoundId, 'zen_bowl');
       expect(reloaded.defaultVibId, 'double');
+      expect(reloaded.alarmVolume, 70);
+      expect(reloaded.volumeFraction, closeTo(0.7, 0.001));
+      expect(reloaded.ringDurationSec, 45);
+      expect(reloaded.ringDurationMs, 45_000);
     });
   });
 
@@ -200,10 +209,16 @@ void main() {
 
       expect(find.text('12-hour'), findsNothing);
       expect(find.text('24-hour'), findsNothing);
-      // The tone section now starts with a playable preview of the selected
-      // tone. Do not invoke the audio plugin in widget tests.
+
+      await tapVisible(tester, find.text('RINGING DURATION'));
+      expect(find.text('10s'), findsWidgets);
+
+      // The tone section now starts with a playable preview and an in-app
+      // volume slider. Do not invoke the audio plugin in widget tests.
       await tapVisible(tester, find.text('ALARM TONE'));
       expect(find.byTooltip('Preview Glass Chime'), findsOneWidget);
+      expect(find.textContaining('100%'), findsWidgets);
+      expect(find.text('System alarm volume'), findsOneWidget);
 
       await tapVisible(tester, find.text('Double'));
       await spin(tester, 4);

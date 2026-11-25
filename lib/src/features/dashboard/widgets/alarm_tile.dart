@@ -39,6 +39,7 @@ class AlarmTile extends StatelessWidget {
     required this.subtitle,
     required this.onToggle,
     required this.onTap,
+    this.snoozeLabel,
   });
 
   final Alarm alarm;
@@ -46,20 +47,46 @@ class AlarmTile extends StatelessWidget {
   final ValueChanged<bool> onToggle;
   final VoidCallback onTap;
 
+  /// Non-null while this alarm's fire was snoozed. Replaces the normal next-
+  /// fire subtitle so the shade and the dashboard tell the same story.
+  final String? snoozeLabel;
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      title: Text(
-        alarm.title.isEmpty ? 'Alarm' : alarm.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              alarm.title.isEmpty ? 'Alarm' : alarm.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          if (snoozeLabel != null) ...[
+            const SizedBox(width: 8),
+            const GlassIcon(
+              icon: LucideIcons.alarmClock,
+              color: LarmPalette.amber,
+              size: 16,
+              boxSize: 28,
+            ),
+          ],
+        ],
       ),
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 2),
-        child: Text(subtitle, style: textTheme.bodyMedium),
+        child: Text(
+          snoozeLabel ?? subtitle,
+          style: textTheme.bodyMedium?.copyWith(
+            color: snoozeLabel == null ? null : LarmPalette.amber,
+          ),
+        ),
       ),
       trailing: Semantics(
         label:
@@ -116,6 +143,7 @@ class TimerTile extends StatelessWidget {
     required this.onResume,
     required this.onReset,
     required this.onTap,
+    this.snoozeLabel,
   });
 
   final String title;
@@ -125,6 +153,9 @@ class TimerTile extends StatelessWidget {
   final VoidCallback onResume;
   final VoidCallback onReset;
   final VoidCallback onTap;
+
+  /// Non-null while this timer's completion was snoozed.
+  final String? snoozeLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -147,7 +178,12 @@ class TimerTile extends StatelessWidget {
       ),
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 2),
-        child: Text(remainingLabel, style: textTheme.bodyMedium),
+        child: Text(
+          snoozeLabel ?? remainingLabel,
+          style: textTheme.bodyMedium?.copyWith(
+            color: snoozeLabel == null ? null : LarmPalette.amber,
+          ),
+        ),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,

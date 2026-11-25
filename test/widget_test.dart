@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 
 import 'package:larm/src/app.dart';
+import 'package:larm/src/core/notifications/fire_state.dart';
 import 'package:larm/src/data/models/alarm.dart';
 import 'package:larm/src/data/models/larm_timer.dart';
 import 'package:larm/src/data/models/settings.dart';
@@ -26,6 +27,7 @@ Future<ProviderScope> dashboardScope({
   List<LarmTimer> timers = const [],
   required Directory dir,
   required String suffix,
+  Map<String, SnoozeInfo> snoozes = const <String, SnoozeInfo>{},
 }) async {
   // Widget tests bypass main(), so the timezone DB must be set up here
   // (safe to repeat across tests in the isolate).
@@ -61,6 +63,7 @@ Future<ProviderScope> dashboardScope({
       settingsControllerProvider.overrideWith(
         (ref) => SettingsController(settingsBox, settings),
       ),
+      snoozeStoreProvider.overrideWith((ref) => SnoozeStore(snoozes)),
     ],
     child: const LarmApp(),
   );
