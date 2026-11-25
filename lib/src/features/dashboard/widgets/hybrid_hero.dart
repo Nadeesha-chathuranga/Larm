@@ -32,7 +32,7 @@ class HybridHero extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     return GlassCard(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(14),
       tint: LarmPalette.glassStrong,
       accent: LarmPalette.cyan,
       glow: true,
@@ -40,12 +40,12 @@ class HybridHero extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(dateLabel, style: textTheme.titleLarge),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               AnalogClock(
-                size: 148,
+                size: 124,
                 tickColor: scheme.onSurface,
                 handColor: larmHandColor(scheme),
                 secondColor: LarmPalette.mint,
@@ -53,7 +53,7 @@ class HybridHero extends StatelessWidget {
                 ringProgress: ringProgress,
                 ringWidth: 7,
               ),
-              const SizedBox(width: 20),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -113,11 +113,11 @@ class HybridHero extends StatelessWidget {
             ],
           ),
           if (nextLabel != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             GlassPill(
               label: nextLabel!,
               color: LarmPalette.amber,
-              style: textTheme.bodyLarge,
+              style: textTheme.bodyMedium,
             ),
           ],
         ],

@@ -40,37 +40,26 @@ void main() {
   });
 
   group('fmtTime', () {
-    test('24h pads hour and minute', () {
-      expect(fmtTime(DateTime.utc(2026, 1, 1, 8, 5), use24h: true), '08:05');
-    });
-
-    test('12h converts midnight and afternoon', () {
-      expect(
-          fmtTime(DateTime.utc(2026, 1, 1, 0, 5), use24h: false), '12:05 AM');
-      expect(
-          fmtTime(DateTime.utc(2026, 1, 1, 20, 5), use24h: false), '8:05 PM');
+    test('always uses 24h and pads hour and minute', () {
+      expect(fmtTime(DateTime.utc(2026, 1, 1, 8, 5)), '08:05');
+      expect(fmtTime(DateTime.utc(2026, 1, 1, 0, 5)), '00:05');
+      expect(fmtTime(DateTime.utc(2026, 1, 1, 20, 5)), '20:05');
     });
 
     test('fmtUtcTime formats the UTC view', () {
-      expect(
-        fmtUtcTime(DateTime.utc(2026, 9, 17, 13, 40), use24h: true),
-        '13:40',
-      );
+      expect(fmtUtcTime(DateTime.utc(2026, 9, 17, 13, 40)), '13:40');
     });
   });
 
   group('fmtDateTime', () {
     test('formats the UTC date and 24h time', () {
       expect(
-        fmtDateTime(DateTime.utc(2026, 11, 20, 8, 5), use24h: true),
+        fmtDateTime(DateTime.utc(2026, 11, 20, 8, 5)),
         'Nov 20, 2026 · 08:05',
       );
-    });
-
-    test('honors the 12h setting', () {
       expect(
-        fmtDateTime(DateTime.utc(2026, 1, 2, 20, 5), use24h: false),
-        'Jan 2, 2026 · 8:05 PM',
+        fmtDateTime(DateTime.utc(2026, 1, 2, 20, 5)),
+        'Jan 2, 2026 · 20:05',
       );
     });
 

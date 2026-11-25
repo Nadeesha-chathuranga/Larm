@@ -4,7 +4,8 @@ part 'settings.g.dart';
 
 /// soundMode: 0 follow system (default), 1 always override.
 /// themeMode: 0 system (default), 1 light, 2 dark.
-/// timeFormat: 0 12h (default), 1 24h.
+/// timeFormat: retained for Hive schema stability, but ignored — Larm is
+/// always 24-hour now.
 /// family: index into [LarmThemeFamily] (default 0 = mono).
 @HiveType(typeId: 2)
 class Settings extends HiveObject {
@@ -25,7 +26,7 @@ class Settings extends HiveObject {
     snoozeCount: 3,
     themeMode: 0,
     family: 0,
-    timeFormat: 0,
+    timeFormat: 1,
     defaultSoundId: 'glass_chime',
     defaultVibId: 'short',
   );

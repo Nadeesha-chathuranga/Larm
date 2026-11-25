@@ -56,7 +56,8 @@
         <receiver
             android:name=".FireLaunchBridgeReceiver"
             android:exported="false" />
-        <!-- Foreground service gives MainActivity's launch a BAL exception. -->
+        <!-- Short-lived retry for the locked-screen handoff; the FSI is the
+             supported path when Larm has no visible window. -->
         <service
             android:name=".FireBridgeService"
             android:exported="false"

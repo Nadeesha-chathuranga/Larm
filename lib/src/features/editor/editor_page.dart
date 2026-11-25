@@ -11,7 +11,6 @@ import '../../core/theme/tokens.dart';
 import '../../core/time/clock.dart';
 import '../../data/models/alarm.dart';
 import '../../data/models/larm_timer.dart';
-import '../../data/models/settings.dart';
 import '../../data/repos/alarm_repo.dart';
 import '../../data/repos/settings_repo.dart';
 import '../../data/repos/timer_repo.dart';
@@ -139,7 +138,6 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       await ref.read(schedulerProvider).refreshArmed(
             alarms: ref.read(alarmRepositoryProvider).all(),
             timers: ref.read(timerRepositoryProvider).all(),
-            settings: ref.read(settingsControllerProvider),
             now: DateTime.now().toUtc(),
           );
     } catch (_) {
@@ -293,18 +291,16 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     Navigator.pop(context);
   }
 
-  String _previewText(Settings settings) {
+  String _previewText() {
     final draft = _draftAlarm('preview');
     final next = nextOccurrence(draft, fromUtc: DateTime.now().toUtc());
     if (next == null) return 'Already passed — pick another time';
-    final use24h = settings.timeFormat == 1;
     final date = DateFormat('EEE, MMM d').format(next.toUtc());
-    return 'Fires $date · ${fmtTime(next, use24h: use24h)} UTC';
+    return 'Fires $date · ${fmtTime(next)} UTC';
   }
 
   @override
   Widget build(BuildContext context) {
-    final settings = ref.watch(settingsControllerProvider);
     final title = _creating
         ? (_isTimer ? 'New timer' : 'New alarm')
         : (_isTimer ? 'Edit timer' : 'Edit alarm');
@@ -323,7 +319,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
       ),
       body: ListView(
         key: const ValueKey('editor-list'),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         children: [
           if (_creating) ...[
             SegmentedButton<_Kind>(
@@ -337,7 +333,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
                 setState(() => _isTimer = selected.first == _Kind.timer);
               },
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
           ],
           TextField(
             controller: _title,
@@ -348,18 +344,18 @@ class _EditorPageState extends ConsumerState<EditorPage> {
               border: const OutlineInputBorder(),
             ),
           ),
-          const SizedBox(height: 8),
-          if (!_isTimer) ..._alarmForm(context, settings),
+          const SizedBox(height: 6),
+          if (!_isTimer) ..._alarmForm(context),
           if (_isTimer) ..._timerForm(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
         ],
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
           child: FilledButton(
             style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(56),
+              minimumSize: const Size.fromHeight(52),
               textStyle: Theme.of(context).textTheme.titleMedium,
             ),
             onPressed: () async {
@@ -377,7 +373,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     );
   }
 
-  List<Widget> _alarmForm(BuildContext context, Settings settings) {
+  List<Widget> _alarmForm(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final previewTime = DateTime.utc(
       _date.year,
@@ -388,39 +384,8 @@ class _EditorPageState extends ConsumerState<EditorPage> {
     );
 
     return [
-      _sectionLabel(context, 'Time zone'),
-      const SizedBox(height: 4),
-      const Text(
-        'This alarm fires at the UTC instant wherever you travel.',
-        style: TextStyle(color: LarmPalette.muted, fontSize: 12),
-      ),
-      const SizedBox(height: 8),
-      GlassCard(
-        padding: const EdgeInsets.all(12),
-        accent: LarmPalette.cyan,
-        glow: true,
-        child: Row(
-          children: [
-            CustomPaint(
-              size: const Size.square(72),
-              painter: AnalogPainter(
-                now: previewTime,
-                tickColor: scheme.onSurface,
-                handColor: LarmPalette.violet,
-                secondColor: LarmPalette.mint,
-                ringColor: LarmPalette.cyan,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(child: Text(_previewText(settings))),
-          ],
-        ),
-      ),
-      _sectionLabel(context, 'Date'),
-      UtcDatePicker(
-        selected: _date,
-        onChanged: (date) => setState(() => _date = date),
-      ),
+      // Time first, directly below the title. Both wheels wrap: 23 → 00 and
+      // 59 → 00, with a larger font so values are easy to read and pick.
       _sectionLabel(context, 'Time'),
       Row(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -431,18 +396,59 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             initialIndex: _hour,
             onSelected: (i) => setState(() => _hour = i),
             label: twoDigits,
-            width: 84,
+            width: 92,
+            loop: true,
           ),
-          Text(':', style: Theme.of(context).textTheme.headlineMedium),
+          Text(':', style: Theme.of(context).textTheme.headlineLarge),
           WheelPicker<int>(
             key: const ValueKey('minute-wheel'),
             items: List<int>.generate(60, (i) => i),
             initialIndex: _minute,
             onSelected: (i) => setState(() => _minute = i),
             label: twoDigits,
-            width: 84,
+            width: 92,
+            loop: true,
           ),
         ],
+      ),
+      _sectionLabel(context, 'Date'),
+      UtcDatePicker(
+        selected: _date,
+        onChanged: (date) => setState(() => _date = date),
+      ),
+      _sectionLabel(context, 'Time zone'),
+      const Padding(
+        padding: EdgeInsets.only(bottom: 6),
+        child: Text(
+          'This alarm fires at the UTC instant wherever you travel.',
+          style: TextStyle(color: LarmPalette.muted, fontSize: 12),
+        ),
+      ),
+      GlassCard(
+        padding: const EdgeInsets.all(10),
+        accent: LarmPalette.cyan,
+        glow: true,
+        child: Row(
+          children: [
+            CustomPaint(
+              size: const Size.square(56),
+              painter: AnalogPainter(
+                now: previewTime,
+                tickColor: scheme.onSurface,
+                handColor: LarmPalette.violet,
+                secondColor: LarmPalette.mint,
+                ringColor: LarmPalette.cyan,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _previewText(),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+          ],
+        ),
       ),
     ];
   }
@@ -459,7 +465,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             initialIndex: _tHour.clamp(0, 23),
             onSelected: (i) => setState(() => _tHour = i),
             label: (v) => '${twoDigits(v)}h',
-            width: 96,
+            width: 88,
           ),
           WheelPicker<int>(
             key: const ValueKey('dur-minute-wheel'),
@@ -467,7 +473,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             initialIndex: _tMin.clamp(0, 59),
             onSelected: (i) => setState(() => _tMin = i),
             label: (v) => '${twoDigits(v)}m',
-            width: 96,
+            width: 88,
           ),
           WheelPicker<int>(
             key: const ValueKey('dur-second-wheel'),
@@ -475,7 +481,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
             initialIndex: _tSec.clamp(0, 59),
             onSelected: (i) => setState(() => _tSec = i),
             label: (v) => '${twoDigits(v)}s',
-            width: 96,
+            width: 88,
           ),
         ],
       ),
@@ -489,7 +495,7 @@ class _EditorPageState extends ConsumerState<EditorPage> {
 
   Widget _sectionLabel(BuildContext context, String text) {
     return Padding(
-      padding: const EdgeInsets.only(top: 20, bottom: 8),
+      padding: const EdgeInsets.only(top: 12, bottom: 6),
       child: Text(
         text.toUpperCase(),
         style: Theme.of(context).textTheme.labelMedium?.copyWith(

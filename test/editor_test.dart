@@ -43,8 +43,10 @@ Future<void> tapVisible(WidgetTester tester, Finder finder) async {
     final matches = finder.evaluate();
     if (matches.isNotEmpty) {
       final dy = tester.getCenter(finder).dy;
-      if (dy > 20 && dy < 580) break;
-      final dir = dy >= 580 ? -350.0 : 350.0;
+      // The editor has a fixed Save bar at the bottom; treat its area as
+      // off-screen so the target is scrolled above it.
+      if (dy > 20 && dy < 500) break;
+      final dir = dy >= 500 ? -350.0 : 350.0;
       await tester.dragFrom(const Offset(30, 500), Offset(0, dir));
     } else {
       await tester.dragFrom(const Offset(30, 500), const Offset(0, -350));
@@ -164,9 +166,9 @@ void main() {
       await tester.tap(find.byTooltip('New alarm or timer'));
       await spin(tester);
       expect(find.text('UTC'), findsNothing);
-      expect(
+      await tapVisible(
+        tester,
         find.textContaining('fires at the UTC instant wherever you travel'),
-        findsOneWidget,
       );
       expect(find.text('Local'), findsNothing);
       expect(find.text('Repeat'), findsNothing);

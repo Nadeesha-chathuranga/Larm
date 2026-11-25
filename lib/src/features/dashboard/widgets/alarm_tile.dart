@@ -50,16 +50,16 @@ class AlarmTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       title: Text(
         alarm.title.isEmpty ? 'Alarm' : alarm.title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+        style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
       ),
       subtitle: Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Text(subtitle, style: textTheme.bodyLarge),
+        padding: const EdgeInsets.only(top: 2),
+        child: Text(subtitle, style: textTheme.bodyMedium),
       ),
       trailing: Semantics(
         label:
@@ -132,22 +132,22 @@ class TimerTile extends StatelessWidget {
     final paused = status == TimerStatus.paused;
     final textTheme = Theme.of(context).textTheme;
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: const GlassIcon(
         icon: LucideIcons.timer,
         color: LarmPalette.cyan,
-        size: 22,
-        boxSize: 44,
+        size: 20,
+        boxSize: 40,
       ),
       title: Text(
         title.isEmpty ? 'Timer' : title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+        style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
       ),
       subtitle: Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Text(remainingLabel, style: textTheme.bodyLarge),
+        padding: const EdgeInsets.only(top: 2),
+        child: Text(remainingLabel, style: textTheme.bodyMedium),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,

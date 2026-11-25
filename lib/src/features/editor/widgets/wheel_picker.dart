@@ -13,9 +13,26 @@ Future<void> _tickHaptic() async {
   await hapticTap();
 }
 
+/// Number of full item cycles on each side of the center block. Large enough
+/// that a user never reaches a physical end of a looping hour/minute wheel.
+const int wheelLoopRepeats = 100;
+
+/// Virtual child count for a looping wheel.
+int wheelLoopCount(int itemCount) =>
+    itemCount * (2 * wheelLoopRepeats + 1);
+
+/// Scroll position that starts on the requested value in the center block.
+int wheelLoopInitialIndex(int initialIndex, int itemCount) =>
+    wheelLoopRepeats * itemCount + (initialIndex % itemCount);
+
+/// Maps a virtual scroll position back to a real item index.
+int wheelWrapIndex(int index, int itemCount) =>
+    ((index % itemCount) + itemCount) % itemCount;
+
 /// Scrollable wheel column with magnification and haptic ticks.
 ///
-/// Generic over the item type; [label] formats the visible text.
+/// Generic over the item type; [label] formats the visible text. When [loop]
+/// is true, scrolling past the last item wraps to the first (e.g. 23 → 00).
 class WheelPicker<T> extends StatefulWidget {
   const WheelPicker({
     super.key,
@@ -24,7 +41,8 @@ class WheelPicker<T> extends StatefulWidget {
     required this.onSelected,
     required this.label,
     this.width = 96,
-    this.itemExtent = 68,
+    this.itemExtent = 72,
+    this.loop = false,
   });
 
   final List<T> items;
@@ -33,6 +51,7 @@ class WheelPicker<T> extends StatefulWidget {
   final String Function(T value) label;
   final double width;
   final double itemExtent;
+  final bool loop;
 
   @override
   State<WheelPicker<T>> createState() => _WheelPickerState<T>();
@@ -44,7 +63,11 @@ class _WheelPickerState<T> extends State<WheelPicker<T>> {
   @override
   void initState() {
     super.initState();
-    _controller = FixedExtentScrollController(initialItem: widget.initialIndex);
+    _controller = FixedExtentScrollController(
+      initialItem: widget.loop
+          ? wheelLoopInitialIndex(widget.initialIndex, widget.items.length)
+          : widget.initialIndex,
+    );
   }
 
   @override
@@ -65,22 +88,38 @@ class _WheelPickerState<T> extends State<WheelPicker<T>> {
         perspective: 0.008,
         diameterRatio: 1.6,
         useMagnifier: true,
-        magnification: 1.15,
-        overAndUnderCenterOpacity: 0.45,
+        magnification: 1.25,
+        overAndUnderCenterOpacity: 0.5,
         physics: const FixedExtentScrollPhysics(),
         onSelectedItemChanged: (index) {
           _tickHaptic();
-          widget.onSelected(index);
+          widget.onSelected(
+            widget.loop
+                ? wheelWrapIndex(index, widget.items.length)
+                : index,
+          );
         },
         childDelegate: ListWheelChildBuilderDelegate(
-          childCount: widget.items.length,
-          builder: (context, index) => Center(
-            child: Text(
-              widget.label(widget.items[index]),
-              style: Theme.of(context).textTheme.headlineMedium
-                  ?.copyWith(color: scheme.onSurface),
-            ),
-          ),
+          childCount: widget.loop
+              ? wheelLoopCount(widget.items.length)
+              : widget.items.length,
+          builder: (context, index) {
+            final itemIndex = widget.loop
+                ? wheelWrapIndex(index, widget.items.length)
+                : index;
+            return Center(
+              child: Text(
+                widget.label(widget.items[itemIndex]),
+                style: (Theme.of(context).textTheme.headlineLarge ??
+                        const TextStyle(fontSize: 32))
+                    .copyWith(
+                  color: scheme.onSurface,
+                  fontSize: 36,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            );
+          },
         ),
       ),
     );

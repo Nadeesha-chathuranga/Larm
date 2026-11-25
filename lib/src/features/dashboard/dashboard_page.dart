@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:animations/animations.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,8 +27,8 @@ import '../editor/editor_page.dart';
 import 'widgets/alarm_tile.dart';
 import 'widgets/hybrid_hero.dart';
 
-String _clockString(DateTime dt, {required bool use24h}) {
-  final base = fmtTime(dt, use24h: use24h);
+String _clockString(DateTime dt) {
+  final base = fmtTime(dt);
   return '$base:${dt.second.toString().padLeft(2, '0')}';
 }
 
@@ -66,16 +68,55 @@ class DashboardPage extends ConsumerStatefulWidget {
   ConsumerState<DashboardPage> createState() => _DashboardPageState();
 }
 
-class _DashboardPageState extends ConsumerState<DashboardPage> {
+class _DashboardPageState extends ConsumerState<DashboardPage>
+    with WidgetsBindingObserver {
   bool? _exactOk;
   bool? _fsiOk;
   bool _launchChecked = false;
   bool _legacyNoticeChecked = false;
 
+  /// The whole app is event-driven while backgrounded; this one-second tick
+  /// only exists for the visible dashboard and is paused in the background.
+  final ValueNotifier<int> _tick = ValueNotifier<int>(0);
+  Timer? _clockTimer;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _startClock();
     _refreshPermissionStatus();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _stopClock();
+    _tick.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startClock();
+      unawaited(_refreshArmed());
+    } else {
+      _stopClock();
+    }
+  }
+
+  void _startClock() {
+    if (_clockTimer != null) return;
+    _tick.value++;
+    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _tick.value++;
+    });
+  }
+
+  void _stopClock() {
+    _clockTimer?.cancel();
+    _clockTimer = null;
   }
 
   @override
@@ -86,6 +127,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     _launchChecked = true;
     _openLaunchFire();
     _checkLegacyNotice();
+    // The shade must always show the current closest fire, even if this is a
+    // cold start after a fire with no user action.
+    unawaited(_refreshArmed());
   }
 
   Future<void> _openLaunchFire() async {
@@ -262,7 +306,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       await ref.read(schedulerProvider).refreshArmed(
             alarms: ref.read(alarmRepositoryProvider).all(),
             timers: ref.read(timerRepositoryProvider).all(),
-            settings: ref.read(settingsControllerProvider),
             now: DateTime.now().toUtc(),
           );
     } catch (_) {
@@ -400,8 +443,6 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    final settings = ref.watch(settingsControllerProvider);
-    final use24h = settings.timeFormat == 1;
     final alarmRepo = ref.watch(alarmRepositoryProvider);
     final timerRepo = ref.watch(timerRepositoryProvider);
 
@@ -416,9 +457,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           ),
         ],
       ),
-      body: StreamBuilder<int>(
-        stream: Stream.periodic(const Duration(seconds: 1), (i) => i),
-        builder: (context, _) {
+      body: ValueListenableBuilder<int>(
+        valueListenable: _tick,
+        builder: (context, _, child) {
           final now = DateTime.now().toUtc();
           return ValueListenableBuilder(
             valueListenable: alarmRepo.listenable(),
@@ -426,7 +467,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               return ValueListenableBuilder(
                 valueListenable: timerRepo.listenable(),
                 builder: (context, timerBox, child) {
-                  return _body(context, now, use24h);
+                  return _body(context, now);
                 },
               );
             },
@@ -449,7 +490,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     );
   }
 
-  Widget _body(BuildContext context, DateTime now, bool use24h) {
+  Widget _body(BuildContext context, DateTime now) {
     final alarms = ref.read(alarmRepositoryProvider).all();
     final timerRepo = ref.read(timerRepositoryProvider);
     final timers = timerRepo.all();
@@ -474,24 +515,25 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           ? 1.0
           : (1 - remaining.inSeconds / window.inSeconds).clamp(0.0, 1.0);
       nextLabel =
-          'Next · ${fmtTime(nearestFinal, use24h: use24h)} · ${_countdownLabel(remaining.isNegative ? Duration.zero : remaining)}';
+          'Next · ${fmtTime(nearestFinal)} · ${_countdownLabel(remaining.isNegative ? Duration.zero : remaining)}';
     }
 
     final showBanner = _exactOk == false;
     final showFsiBanner = _fsiOk == false;
 
+    // Extra bottom inset keeps the last alarm clear of the + button.
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
       children: [
         HybridHero(
           dateLabel: DateFormat('EEE, MMM d').format(utc),
-          primaryTime: _clockString(utc, use24h: use24h),
+          primaryTime: _clockString(utc),
           primaryLabel: 'UTC',
           ringProgress: ring,
           nextLabel: nextLabel,
         ),
         if (showBanner) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           GlassCard(
             tint: LarmPalette.coral.withValues(alpha: 0.08),
             accent: LarmPalette.coral,
@@ -512,7 +554,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           ),
         ],
         if (showFsiBanner) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           GlassCard(
             tint: LarmPalette.amber.withValues(alpha: 0.08),
             accent: LarmPalette.amber,
@@ -535,10 +577,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             ),
           ),
         ],
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
         if (alarms.isEmpty && timers.isEmpty)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 48),
+            padding: const EdgeInsets.symmetric(vertical: 28),
             child: Column(
               children: [
                 GlassIcon(
@@ -564,7 +606,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           for (var i = 0; i < alarms.length; i++)
             Padding(
               padding: EdgeInsets.only(
-                bottom: i == alarms.length - 1 ? 0 : 12,
+                bottom: i == alarms.length - 1 ? 0 : 8,
               ),
               child: Dismissible(
                 key: ValueKey('alarm-${alarms[i].id}'),
@@ -579,7 +621,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                   padding: EdgeInsets.zero,
                   child: AlarmTile(
                     alarm: alarms[i],
-                    subtitle: _alarmSubtitle(alarms[i], utc, use24h),
+                    subtitle: _alarmSubtitle(alarms[i], utc),
                     onToggle: (on) => _toggleAlarm(alarms[i], on),
                     onTap: () => Navigator.pushNamed(
                       context,
@@ -596,7 +638,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           for (var i = 0; i < timers.length; i++)
             Padding(
               padding: EdgeInsets.only(
-                bottom: i == timers.length - 1 ? 0 : 12,
+                bottom: i == timers.length - 1 ? 0 : 8,
               ),
               child: Dismissible(
                 key: ValueKey('timer-${timers[i].id}'),
@@ -638,12 +680,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   /// Section header with a neon accent bar and item count.
   Widget _listHeader(BuildContext context, String title, int count) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 10, 4, 8),
+      padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
       child: Row(
         children: [
           Container(
             width: 4,
-            height: 20,
+            height: 18,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(4),
               gradient: LarmPalette.hotGradient,
@@ -665,13 +707,13 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     );
   }
 
-  String _alarmSubtitle(Alarm alarm, DateTime utc, bool use24h) {
+  String _alarmSubtitle(Alarm alarm, DateTime utc) {
     final next = nextOccurrence(alarm, fromUtc: utc);
     final fire = next ?? oneTimeInstantUtc(alarm);
     final repeat = repeatLabel(alarm);
     final when = fire == null
         ? repeat
-        : '${fmtDateTime(fire, use24h: use24h)} · $repeat';
+        : '${fmtDateTime(fire)} · $repeat';
     if (!alarm.enabled) return '$when · Off';
     if (next == null) return '$when · Passed';
     return when;

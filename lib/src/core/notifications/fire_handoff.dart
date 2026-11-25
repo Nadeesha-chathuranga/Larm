@@ -118,6 +118,27 @@ class FireHandoff {
     requestDrain();
   }
 
+  /// Removes one queued fire for app startup.
+  ///
+  /// A locked cold start must show the ringing page as the first route. The
+  /// fire is marked recent so the normal drain cannot push a second copy.
+  static Future<PendingFire?> takeInitial() async {
+    final stored = await _read();
+    final candidates = <PendingFire>[...stored, ..._memory];
+    if (candidates.isEmpty) return null;
+    final fire = candidates.first;
+    bool same(PendingFire entry) =>
+        entry.kind == fire.kind && entry.id == fire.id;
+    _memory.removeWhere(same);
+    final remaining = <PendingFire>[
+      ...stored.where((entry) => !same(entry)),
+      ..._memory,
+    ];
+    await _persistAll(remaining);
+    await _markRecent([_fireKey(fire)]);
+    return fire;
+  }
+
   /// Pushes every queued fire through [push].
   ///
   /// Returns the number pushed. Fires whose push fails stay queued for the
@@ -178,16 +199,16 @@ class FireHandoff {
     }
   }
 
-  static Future<void> _persist() async {
+  static Future<void> _persist() => _persistAll(_memory);
+
+  static Future<void> _persistAll(Iterable<PendingFire> fires) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      if (_memory.isEmpty) {
+      final encoded = fires.map((fire) => fire.encode()).toList();
+      if (encoded.isEmpty) {
         await prefs.remove(pendingFiresKey);
       } else {
-        await prefs.setStringList(
-          pendingFiresKey,
-          _memory.map((fire) => fire.encode()).toList(),
-        );
+        await prefs.setStringList(pendingFiresKey, encoded);
       }
     } catch (_) {
       // Method channel unavailable (e.g. a background isolate in a test);

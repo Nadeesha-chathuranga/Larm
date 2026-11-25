@@ -52,8 +52,8 @@ class PluginBackend implements AlarmBackend {
       details: fire.details,
       payload: fire.payload,
     );
-    // Android suppresses FSI while the screen is on, so pair the notification
-    // with a direct trigger-page launch alarm. Same id keeps the slots aligned.
+    // Pair the notification with a locked-screen-only launch alarm. Same id
+    // keeps the slots aligned; unlocked fires stay as notification heads-ups.
     await FireLauncher.schedule(
       id: fire.id,
       when: fire.when,
@@ -115,8 +115,7 @@ class AlarmScheduler {
 
   bool _override(Settings settings) => settings.soundMode == 1;
 
-  String _timeBody(tz.TZDateTime when, Settings settings) =>
-      fmtTime(when, use24h: settings.timeFormat == 1);
+  String _timeBody(tz.TZDateTime when) => fmtTime(when);
 
   NotificationDetails _details({
     required bool overrideMode,
@@ -150,7 +149,7 @@ class AlarmScheduler {
       ScheduledFire(
         id: id,
         title: alarm.title.isEmpty ? 'Alarm' : alarm.title,
-        body: _timeBody(next, settings),
+        body: _timeBody(next),
         when: next,
         details: _details(
           overrideMode: _override(settings),
@@ -182,7 +181,7 @@ class AlarmScheduler {
       ScheduledFire(
         id: notificationIdForAlarm(alarm.id),
         title: alarm.title.isEmpty ? 'Alarm' : alarm.title,
-        body: 'Snoozed · ${_timeBody(when, settings)}',
+        body: 'Snoozed · ${_timeBody(when)}',
         when: when,
         details: _details(
           overrideMode: _override(settings),
@@ -234,10 +233,8 @@ class AlarmScheduler {
   ({tz.TZDateTime when, String label})? _nextArmed({
     required List<Alarm> alarms,
     required List<LarmTimer> timers,
-    required Settings settings,
     required DateTime now,
   }) {
-    final use24h = settings.timeFormat == 1;
     ({tz.TZDateTime when, String label})? best;
 
     void consider(tz.TZDateTime when, String label) {
@@ -253,7 +250,7 @@ class AlarmScheduler {
       final name = alarm.title.trim().isEmpty ? 'Alarm' : alarm.title.trim();
       consider(
         next,
-        '$name · ${fmtDateTime(next, use24h: use24h)} UTC',
+        '$name · ${fmtDateTime(next)} UTC',
       );
     }
     for (final timer in timers) {
@@ -267,7 +264,7 @@ class AlarmScheduler {
       final name = timer.title.trim().isEmpty ? 'Timer' : timer.title.trim();
       consider(
         when,
-        '$name · ${fmtDateTime(when, use24h: use24h)} UTC',
+        '$name · ${fmtDateTime(when)} UTC',
       );
     }
     return best;
@@ -278,13 +275,11 @@ class AlarmScheduler {
   Future<void> refreshArmed({
     required List<Alarm> alarms,
     required List<LarmTimer> timers,
-    required Settings settings,
     required DateTime now,
   }) async {
     final next = _nextArmed(
       alarms: alarms,
       timers: timers,
-      settings: settings,
       now: now,
     );
     if (next == null) {
@@ -328,7 +323,6 @@ class AlarmScheduler {
     await refreshArmed(
       alarms: alarms,
       timers: timers,
-      settings: settings,
       now: now,
     );
     return (scheduled: scheduled, cancelled: cancelled, expired: expired);

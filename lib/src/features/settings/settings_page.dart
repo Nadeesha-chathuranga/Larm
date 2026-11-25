@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -12,11 +14,12 @@ import '../../core/theme/tokens.dart';
 import '../../data/repos/alarm_repo.dart';
 import '../../data/repos/settings_repo.dart';
 import '../../data/repos/timer_repo.dart';
-import '../editor/widgets/sound_sheet.dart';
+import '../editor/widgets/sound_sheet.dart'
+    show previewAlarmSound, showSoundPickerSheet;
 
-/// Settings: sound mode, global tone and vibration, snooze, time format.
+/// Settings: sound mode, global tone and vibration, snooze.
 /// Every alarm and timer uses these shared choices. The app always uses the
-/// single dark Aurora glass theme and UTC time.
+/// single dark Aurora glass theme, 24-hour UTC time.
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
 
@@ -101,7 +104,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         children: [
           _group(
             context,
@@ -163,41 +166,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           _group(
             context,
             children: [
-              _label(context, 'Time format'),
-              Row(
-                children: [
-                  const GlassIcon(
-                    icon: LucideIcons.globe2,
-                    color: LarmPalette.cyan,
-                    boxSize: 40,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Times are shown in UTC everywhere in Larm.',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              SegmentedButton<int>(
-                segments: const [
-                  ButtonSegment(value: 0, label: Text('12-hour')),
-                  ButtonSegment(value: 1, label: Text('24-hour')),
-                ],
-                selected: {settings.timeFormat},
-                onSelectionChanged: (selected) async {
-                  await hapticTap();
-                  await controller.updateTimeFormat(selected.first);
-                },
-              ),
-            ],
-          ),
-          _group(
-            context,
-            children: [
               _label(context, 'Alarm tone'),
+              _SoundPreviewBar(
+                soundId: settings.defaultSoundId,
+                onPreview: () => previewAlarmSound(
+                  context,
+                  settings.defaultSoundId,
+                ),
+              ),
+              const SizedBox(height: 8),
               GlassCard(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -271,12 +248,53 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 }
 
+/// Compact selected-tone preview bar. The play button previews the same
+/// bundled WAV that will ring at fire time.
+class _SoundPreviewBar extends StatelessWidget {
+  const _SoundPreviewBar({required this.soundId, required this.onPreview});
+
+  final String soundId;
+  final Future<void> Function() onPreview;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return GlassCard(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      accent: LarmPalette.cyan,
+      glow: false,
+      child: ListTile(
+        dense: true,
+        leading: const GlassIcon(
+          icon: LucideIcons.play,
+          color: LarmPalette.cyan,
+          boxSize: 36,
+        ),
+        title: Text(
+          soundLabel(soundId),
+          style: theme.textTheme.titleMedium,
+        ),
+        subtitle: Text(
+          soundCategory(soundId),
+          style: theme.textTheme.bodySmall,
+        ),
+        trailing: IconButton(
+          tooltip: 'Preview ${soundLabel(soundId)}',
+          icon: const Icon(LucideIcons.volume2, color: LarmPalette.cyan),
+          onPressed: () => unawaited(onPreview()),
+        ),
+        onTap: () => unawaited(onPreview()),
+      ),
+    );
+  }
+}
+
 /// Grouped settings section card.
 Widget _group(BuildContext context, {required List<Widget> children}) {
   return Padding(
-    padding: const EdgeInsets.only(bottom: 12),
+    padding: const EdgeInsets.only(bottom: 10),
     child: GlassCard(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(14),
       accent: LarmPalette.violet,
       glow: true,
       child: Column(
@@ -289,7 +307,7 @@ Widget _group(BuildContext context, {required List<Widget> children}) {
 
 Widget _label(BuildContext context, String text) {
   return Padding(
-    padding: const EdgeInsets.only(bottom: 8),
+    padding: const EdgeInsets.only(bottom: 6),
     child: Text(
       text.toUpperCase(),
       style: Theme.of(context).textTheme.labelMedium?.copyWith(

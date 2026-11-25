@@ -60,6 +60,7 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
 
   AudioPlayer? _ringPlayer;
   Timer? _ringTimer;
+  Timer? _armedTimer;
   bool _ringStarted = false;
   StreamSubscription<PendingFire>? _actionSub;
 
@@ -99,6 +100,12 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
 
     _buzz();
     _watchNotificationSound();
+    // After the ring window the notification is gone. Refresh the shade even
+    // if the user leaves this page without pressing Stop/Snooze.
+    _armedTimer = Timer(
+      Duration(milliseconds: alarmRingMs + 500),
+      () => unawaited(_refreshArmedStatus()),
+    );
     final auto = _autoAction;
     if (auto == 'stop') {
       WidgetsBinding.instance.addPostFrameCallback((_) => _stop());
@@ -198,6 +205,7 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
   @override
   void dispose() {
     _actionSub?.cancel();
+    _armedTimer?.cancel();
     _stopRingAudio();
     super.dispose();
   }
@@ -223,17 +231,20 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
     } catch (_) {
       // Persistence already attempted; never trap the user on this page.
     }
+    await _refreshArmedStatus();
+    if (mounted) Navigator.maybePop(context);
+  }
+
+  Future<void> _refreshArmedStatus() async {
     try {
       await ref.read(schedulerProvider).refreshArmed(
             alarms: ref.read(alarmRepositoryProvider).all(),
             timers: ref.read(timerRepositoryProvider).all(),
-            settings: ref.read(settingsControllerProvider),
             now: DateTime.now().toUtc(),
           );
     } catch (_) {
-      // Status notice is best effort; the fire action already completed.
+      // Status-only; never break the fire action or the ringing UI.
     }
-    if (mounted) Navigator.maybePop(context);
   }
 
   Future<void> _stop() => _finish(() async {
@@ -296,7 +307,6 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
   Widget build(BuildContext context) {
     final entrance = motionEnabled(context) ? 300.ms : Duration.zero;
     final settings = ref.watch(settingsControllerProvider);
-    final use24h = settings.timeFormat == 1;
     final alarm = _isTimer ? null : _alarm;
     final timer = _isTimer ? _timer : null;
     final missing = _isTimer ? timer == null : alarm == null;
@@ -310,7 +320,7 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
         ? 'This alarm no longer exists.'
         : _isTimer
             ? 'Done'
-            : '${fmtTime(DateTime.now().toUtc(), use24h: use24h)} UTC';
+            : '${fmtTime(DateTime.now().toUtc())} UTC';
 
     final titleStyle = (Theme.of(context).textTheme.displayMedium ??
             const TextStyle(fontSize: 45))
@@ -333,11 +343,11 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
         body: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 420),
                 child: GlassCard(
-                  padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
                   tint: LarmPalette.glassStrong,
                   accent: LarmPalette.pink,
                   glow: true,
@@ -350,10 +360,10 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
-                            PulseRings(size: 180, color: LarmPalette.pink),
+                            PulseRings(size: 136, color: LarmPalette.pink),
                             Icon(
                                   LucideIcons.bellRing,
-                                  size: 64,
+                                  size: 50,
                                   color: LarmPalette.pink,
                                 )
                                 .animate()
@@ -362,7 +372,7 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 12),
                       NeonText(
                             title,
                             textAlign: TextAlign.center,
@@ -377,7 +387,7 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
                             end: 0,
                             duration: entrance,
                           ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 8),
                       NeonText(
                         subtitle,
                         textAlign: TextAlign.center,
@@ -398,7 +408,7 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
                           child: const Text('Close'),
                         ),
                       ] else ...[
-                        const SizedBox(height: 18),
+                        const SizedBox(height: 12),
                         Text(
                           _remaining > 0
                               ? '$_remaining snooze${_remaining == 1 ? '' : 's'} left'
@@ -406,10 +416,10 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 10),
                         FilledButton.tonal(
                           style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(56),
+                            minimumSize: const Size.fromHeight(52),
                             textStyle: Theme.of(context).textTheme.titleMedium,
                             backgroundColor: LarmPalette.violet.withValues(
                               alpha: 0.28,
@@ -429,11 +439,11 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
                               : null,
                           child: Text('Snooze ${settings.snoozeMin}m'),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 8),
                         FilledButton(
                           key: const Key('trigger-cancel-button'),
                           style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(60),
+                            minimumSize: const Size.fromHeight(56),
                             textStyle: (Theme.of(context)
                                         .textTheme
                                         .titleLarge ??

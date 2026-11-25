@@ -78,7 +78,7 @@ void main() {
           matching: find.byType(Padding),
         ).first,
       ).padding as EdgeInsets;
-      expect(firstGap.bottom, 12);
+      expect(firstGap.bottom, 8);
       expect(lastGap.bottom, 0);
 
       // Only the hero keeps a subtle plain UTC hint; tiles have no badge.
@@ -175,12 +175,12 @@ void main() {
 
       expect(find.text('Morning dated'), findsOneWidget);
       expect(
-        find.text('Jan 2, 2099 · 8:05 AM · One-time'),
+        find.text('Jan 2, 2099 · 08:05 · One-time'),
         findsOneWidget,
       );
       expect(find.text('Morning idle'), findsOneWidget);
       expect(
-        find.text('Mar 4, 2099 · 9:30 AM · One-time · Off'),
+        find.text('Mar 4, 2099 · 09:30 · One-time · Off'),
         findsOneWidget,
       );
     });

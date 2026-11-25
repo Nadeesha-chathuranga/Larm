@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:larm/src/core/notifications/fire_handoff.dart';
+import 'package:larm/src/core/prefs.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -40,6 +41,54 @@ void main() {
     expect(count, 1);
     expect(pushed, hasLength(1));
     expect(pushed.single.arguments['timerId'], 't1');
+  });
+
+  test('takeInitial consumes one fire for the first route', () async {
+    await FireHandoff.enqueue(kind: 'alarm', id: 'cold');
+    await FireHandoff.enqueue(kind: 'timer', id: 'stacked');
+
+    final initial = await FireHandoff.takeInitial();
+    expect(initial?.kind, 'alarm');
+    expect(initial?.id, 'cold');
+
+    // The startup route must not be pushed again by the normal drain, while
+    // a simultaneous fire still queues normally.
+    final pushed = <PendingFire>[];
+    expect(
+      await FireHandoff.drain((fire) async {
+        pushed.add(fire);
+        return true;
+      }),
+      1,
+    );
+    expect(pushed.single.id, 'stacked');
+  });
+
+  test('takes a fire written by the native locked-screen bridge', () async {
+    // FireLauncher.kt writes the same JSON/PendingIntent shape into Flutter's
+    // SharedPreferences file when the companion FSI resumes MainActivity.
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      pendingFiresKey: <String>[
+        '{"kind":"timer","id":"native_fire"}',
+        '{"kind":"alarm","id":"native_fire_two"}',
+      ],
+    });
+
+    final initial = await FireHandoff.takeInitial();
+    expect(initial?.kind, 'timer');
+    expect(initial?.id, 'native_fire');
+
+    // The startup route consumes its fire, but a second queued fire must wait
+    // for the normal drain instead of being lost with the prefs rewrite.
+    final pushed = <PendingFire>[];
+    expect(
+      await FireHandoff.drain((fire) async {
+        pushed.add(fire);
+        return true;
+      }),
+      1,
+    );
+    expect(pushed.single.id, 'native_fire_two');
   });
 
   test('explicit notification action wins over a plain launch', () async {

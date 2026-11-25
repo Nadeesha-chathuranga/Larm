@@ -5,14 +5,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../prefs.dart';
 
-/// Companion exact alarm that opens the ringing page at fire time.
+/// Companion exact alarm for locked-screen fires.
 ///
 /// Android deliberately does not launch a full-screen intent while the user is
-/// actively using the device: the alarm is downgraded to a heads-up popup.
-/// Larm schedules this second, app-owned alarm for the same UTC instant so
-/// `/trigger` is opened explicitly in foreground, background, killed and locked
-/// states. The notification remains the audio/vibration source and the
-/// locked-screen fallback; duplicate callbacks are deduped by `FireHandoff`.
+/// actively using the device: the alarm is downgraded to a heads-up popup,
+/// which is what Larm wants for unlocked phones. This second, app-owned alarm
+/// fires at the same UTC instant and opens `/trigger` only when the screen is
+/// off or the keyguard is locked. The notification remains the audio/vibration
+/// source in every state; duplicate callbacks are deduped by `FireHandoff`.
 class FireLauncher {
   FireLauncher._();
 

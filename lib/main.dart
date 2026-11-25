@@ -6,6 +6,7 @@ import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 import 'src/app.dart';
+import 'src/core/notifications/fire_handoff.dart';
 import 'src/core/notifications/scheduler.dart';
 import 'src/core/migration.dart';
 import 'src/core/prefs.dart';
@@ -56,6 +57,10 @@ Future<void> main() async {
     // Scheduling is best-effort until permissions are granted.
   }
 
+  // A fire queued by a locked cold start must be the first visible route so
+  // the dashboard never flashes over the alarm popup.
+  final initialFire = await FireHandoff.takeInitial();
+
   runApp(
     ProviderScope(
       overrides: [
@@ -66,7 +71,7 @@ Future<void> main() async {
           (ref) => SettingsController(settingsBox, initialSettings),
         ),
       ],
-      child: const LarmApp(),
+      child: LarmApp(initialFire: initialFire),
     ),
   );
 }

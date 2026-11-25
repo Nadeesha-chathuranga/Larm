@@ -83,7 +83,7 @@ final ThemeData larmGlassTheme = ThemeData(
     elevation: 0,
     margin: EdgeInsets.zero,
     shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(16),
       side: const BorderSide(color: LarmPalette.glassBorder),
     ),
   ),
@@ -94,7 +94,7 @@ final ThemeData larmGlassTheme = ThemeData(
     centerTitle: false,
     titleTextStyle: TextStyle(
       color: LarmPalette.text,
-      fontSize: 26,
+      fontSize: 22,
       fontWeight: FontWeight.w800,
       letterSpacing: -0.6,
     ),
@@ -113,7 +113,7 @@ final ThemeData larmGlassTheme = ThemeData(
       foregroundColor: LarmPalette.backgroundDeep,
       shadowColor: Colors.transparent,
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       textStyle: const TextStyle(fontWeight: FontWeight.w700),
     ),
   ),

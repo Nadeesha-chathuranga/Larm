@@ -4,10 +4,10 @@ Larm — a UTC-only alarm &amp; timer app for gaming groups across timezones. Ev
 
 ## Highlights
 
-- **UTC only** — no device-local clock or local alarm mode; the dashboard, editor preview, and ringing screen all show UTC.
-- **One-time alarms** — choose the exact UTC date with a custom in-app calendar; no repeat modes.
-- **One sound, one vibration** — pick a tone and vibration pattern once in Settings; every alarm and timer uses them.
+- **UTC only, 24-hour only** — no device-local clock, local alarm mode, or 12-hour toggle; every screen shows UTC in `HH:mm`.
+- **One-time alarms** — choose the exact UTC date with a custom in-app calendar; no repeat modes. The hour and minute wheels loop (`23 → 00`, `59 → 00`).
+- **One sound, one vibration** — pick a tone and vibration pattern once in Settings; a preview bar plays the selected tone. Every alarm and timer uses them.
 - **Pure-black glass** — one true-black theme with dark inward-glow cards, crisp glass edges and a high-contrast UTC clock.
 - **22 bundled tones** — 12 original classics plus 10 royalty-free "Popular" tones synthesized locally (`dart run tools/generate_sounds.dart`).
-- **Live timers and full-screen alerts** — alarms and timers keep running after the app is killed, with snooze controls and notification actions. A silent ongoing "Alarm armed" notice in the shade always shows the next UTC fire time.
+- **Live timers and screen-aware alerts** — alarms and timers keep running after the app is killed. Unlocked fires are alarm-style heads-up notifications with looping sound; locked/screen-off fires open the full-screen ringing page. A silent ongoing "Alarm armed" notice shows the closest armed alarm or timer, and disappears when none remain. All UI stays above the Android navigation bar.
 - **Local-only, no auth** — all data stays on the device.

@@ -6,18 +6,15 @@ import '../../data/models/alarm.dart';
 /// anywhere in scheduling, display, or repeat calculations.
 DateTime utcNow() => DateTime.now().toUtc();
 
-/// Formats the UTC fields of [dt], honoring the 12/24h setting.
-String fmtTime(DateTime dt, {required bool use24h}) {
+/// Formats the UTC fields of [dt] in 24-hour time. Larm never shows 12-hour
+/// time: the device locale and the legacy `timeFormat` setting are ignored.
+String fmtTime(DateTime dt) {
   final minutes = dt.minute.toString().padLeft(2, '0');
-  if (use24h) return '${dt.hour.toString().padLeft(2, '0')}:$minutes';
-  final suffix = dt.hour < 12 ? 'AM' : 'PM';
-  final h12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-  return '$h12:$minutes $suffix';
+  return '${dt.hour.toString().padLeft(2, '0')}:$minutes';
 }
 
 /// Convenience for callers holding a local [DateTime]: format its UTC view.
-String fmtUtcTime(DateTime dt, {required bool use24h}) =>
-    fmtTime(dt.toUtc(), use24h: use24h);
+String fmtUtcTime(DateTime dt) => fmtTime(dt.toUtc());
 
 const List<String> _shortMonths = <String>[
   'Jan',
@@ -34,13 +31,13 @@ const List<String> _shortMonths = <String>[
   'Dec',
 ];
 
-/// Formats the UTC date and time fields of [dt], honoring the 12/24h setting.
+/// Formats the UTC date and time fields of [dt] in 24-hour time.
 ///
-/// Example: `Nov 20, 2026 · 08:05` (or `8:05 AM` in 12h mode).
-String fmtDateTime(DateTime dt, {required bool use24h}) {
+/// Example: `Nov 20, 2026 · 08:05`.
+String fmtDateTime(DateTime dt) {
   final utc = dt.toUtc();
   return '${_shortMonths[utc.month - 1]} ${utc.day}, ${utc.year} · '
-      '${fmtTime(utc, use24h: use24h)}';
+      '${fmtTime(utc)}';
 }
 
 /// The UTC instant a dated one-time alarm is configured for, or null when

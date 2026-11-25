@@ -3,6 +3,7 @@ package com.larm.larm
 import android.app.Activity
 import android.app.ActivityOptions
 import android.app.AlarmManager
+import android.app.KeyguardManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -15,21 +16,20 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.os.PowerManager
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONObject
 
 /**
- * App-owned companion alarm for every fire.
+ * Locked-screen companion alarm for every fire.
  *
- * `flutter_local_notifications` owns the audible notification and its FSI, but
- * Android intentionally skips the FSI while the screen is on and the user is
- * active, and One UI also suppresses it while interactive. The exact alarm
- * wakes a receiver, which starts a short-lived foreground service (allowed by
- * the exact-alarm exception even when Larm is cached/killed). That service
- * starts MainActivity with the notification's SELECT_NOTIFICATION intent, so
- * the existing Flutter callback queues the fire through FireHandoff and
- * deduplicates it against the notification/FSI paths.
+ * `flutter_local_notifications` owns the audible notification and its FSI.
+ * While the phone is unlocked and in use, that heads-up notification is the
+ * intended presentation and this bridge exits immediately. When the screen is
+ * off or the keyguard is locked, the exact alarm wakes a receiver which adds
+ * a silent FSI fallback; Android never accepts a plain activity start from a
+ * cached/killed app. FireHandoff deduplicates the OS and companion paths.
  */
 object FireLauncher {
     const val CHANNEL = "com.larm.larm/fire_launcher"
@@ -43,6 +43,12 @@ object FireLauncher {
     private const val PREFS = "FlutterSharedPreferences"
     private const val PREF_PREFIX = "flutter.fire_launcher."
     private const val LAST_FIRE_AT = "flutter.fire_launcher.last_fire_at"
+
+    // SharedPreferences keys are stored in the Flutter file with this prefix.
+    // Writing here lets a native FSI fallback hand the fire to FireHandoff even
+    // when the Flutter isolate has not started yet.
+    private const val PENDING_FIRES = "flutter.pending_fires_v1"
+    private const val MAX_PENDING_FIRES = 20
 
     fun register(messenger: BinaryMessenger, context: Context) {
         val app = context.applicationContext
@@ -106,12 +112,47 @@ object FireLauncher {
         alarmManager.cancel(pendingIntent(context, id, ""))
     }
 
+    /**
+     * Only force the ringing page when the user cannot see the notification.
+     * While the phone is unlocked and in use, the alarm notification's own
+     * heads-up (with its looping tone) is the intended presentation.
+     */
+    fun shouldOpenFullScreen(context: Context): Boolean {
+        val interactive = context.getSystemService(PowerManager::class.java)?.isInteractive ?: true
+        val locked = context.getSystemService(KeyguardManager::class.java)?.isDeviceLocked ?: false
+        return !interactive || locked
+    }
+
     /** Records the real fire instant so Flutter can cap its fallback tone. */
     fun markFire(context: Context, atMillis: Long) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putLong(LAST_FIRE_AT, atMillis)
             .apply()
+    }
+
+    /**
+     * Queues a locked-screen bridge fire for Flutter's [FireHandoff]. The JSON
+     * shape matches `PendingFire.decode`, so a cold start consumes it as the
+     * first `/trigger` route instead of flashing the dashboard.
+     */
+    fun recordPendingFire(context: Context, payload: String) {
+        val separator = payload.indexOf(':')
+        if (separator <= 0 || separator == payload.length - 1) return
+        val kind = payload.substring(0, separator)
+        if (kind != "alarm" && kind != "timer") return
+        val encoded = JSONObject()
+            .put("kind", kind)
+            .put("id", payload.substring(separator + 1))
+            .toString()
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val existing = prefs.getStringSet(PENDING_FIRES, emptySet<String>())
+            ?: emptySet<String>()
+        if (existing.contains(encoded)) return
+        val updated = (existing + encoded).toList()
+            .takeLast(MAX_PENDING_FIRES)
+            .toSet()
+        prefs.edit().putStringSet(PENDING_FIRES, updated).apply()
     }
 
     /** True while the ringing notification still owns the looping tone. */
@@ -173,6 +214,8 @@ class FireLaunchBridgeReceiver : BroadcastReceiver() {
         if (payload.isNullOrEmpty()) return
         val id = intent.getIntExtra(FireLauncher.ARG_NOTIFICATION_ID, -1)
         FireLauncher.markFire(context, System.currentTimeMillis())
+        if (!FireLauncher.shouldOpenFullScreen(context)) return
+        FireLauncher.recordPendingFire(context, payload)
         val launch = Intent(context, FireBridgeService::class.java).apply {
             action = ACTION_BRIDGE
             putExtra(FireLauncher.ARG_NOTIFICATION_ID, id)
@@ -253,9 +296,9 @@ class FireLaunchBridgeReceiver : BroadcastReceiver() {
 }
 
 /**
- * Very short foreground service that re-dispatches the notification launch
- * intent to MainActivity. Running as a foreground service gives the activity
- * start a BAL exception even when Larm was killed/cached at fire time.
+ * Very short foreground service that retries the activity handoff. Android 16
+ * no longer treats an FGS as a general background-activity exception, so the
+ * companion FSI above is the supported path when Larm has no visible window.
  */
 class FireBridgeService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
@@ -263,7 +306,8 @@ class FireBridgeService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startBridgeForeground()
         val payload = intent?.getStringExtra(FireLauncher.ARG_PAYLOAD)
-        if (!payload.isNullOrEmpty()) {
+        if (!payload.isNullOrEmpty() && FireLauncher.shouldOpenFullScreen(this)) {
+            FireLauncher.recordPendingFire(this, payload)
             val launch = Intent(this, MainActivity::class.java).apply {
                 action = FireLauncher.SELECT_ACTION
                 putExtra(
@@ -339,6 +383,7 @@ class FireLaunchActivity : Activity() {
     private fun dispatch() {
         val payload = intent.getStringExtra(FireLauncher.ARG_PAYLOAD)
         if (payload.isNullOrEmpty()) return
+        FireLauncher.recordPendingFire(this, payload)
         val launch = Intent(this, MainActivity::class.java).apply {
             action = FireLauncher.SELECT_ACTION
             putExtra(

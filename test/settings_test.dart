@@ -175,7 +175,7 @@ void main() {
     });
   });
 
-  testWidgets('settings page applies theme, snooze, mode and format', (
+  testWidgets('settings page applies snooze, mode and has tone preview', (
     WidgetTester tester,
   ) async {
     late ProviderContainer container;
@@ -198,9 +198,12 @@ void main() {
       await spin(tester, 4);
       expect(container.read(settingsControllerProvider).soundMode, 1);
 
-      await tapVisible(tester, find.text('24-hour'));
-      await spin(tester, 4);
-      expect(container.read(settingsControllerProvider).timeFormat, 1);
+      expect(find.text('12-hour'), findsNothing);
+      expect(find.text('24-hour'), findsNothing);
+      // The tone section now starts with a playable preview of the selected
+      // tone. Do not invoke the audio plugin in widget tests.
+      await tapVisible(tester, find.text('ALARM TONE'));
+      expect(find.byTooltip('Preview Glass Chime'), findsOneWidget);
 
       await tapVisible(tester, find.text('Double'));
       await spin(tester, 4);

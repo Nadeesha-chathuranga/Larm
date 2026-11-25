@@ -8,6 +8,29 @@ import '../../../core/audio/sounds.dart';
 import '../../../core/haptics.dart';
 import '../../../core/theme/tokens.dart';
 
+/// Plays the selected bundled tone once. Shared by the picker and the
+/// Settings preview bar so both use the same assets and error handling.
+Future<void> previewAlarmSound(BuildContext context, String id) async {
+  await hapticTap();
+  if (id == 'system') {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('System sound plays at fire time')),
+    );
+    return;
+  }
+  try {
+    final player = AudioPlayer();
+    unawaited(player.onPlayerComplete.first.then((_) => player.dispose()));
+    await player.play(AssetSource('sounds/$id.wav'));
+  } catch (_) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Could not preview this tone')),
+    );
+  }
+}
+
 /// Grouped tone picker shared by the editor and settings.
 ///
 /// Returns the selected sound id, or null when dismissed.
@@ -34,26 +57,7 @@ class _SoundSheet extends StatefulWidget {
 class _SoundSheetState extends State<_SoundSheet> {
   late String _selected = widget.currentId;
 
-  Future<void> _preview(String id) async {
-    await hapticTap();
-    if (id == 'system') {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('System sound plays at fire time')),
-      );
-      return;
-    }
-    try {
-      final player = AudioPlayer();
-      unawaited(player.onPlayerComplete.first.then((_) => player.dispose()));
-      await player.play(AssetSource('sounds/$id.wav'));
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not preview this tone')),
-      );
-    }
-  }
+  Future<void> _preview(String id) => previewAlarmSound(context, id);
 
   @override
   Widget build(BuildContext context) {

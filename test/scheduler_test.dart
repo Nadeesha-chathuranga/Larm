@@ -330,7 +330,7 @@ void main() {
       expect(backend.armed, hasLength(1));
       expect(backend.armed.single.title, 'Alarm armed');
       expect(backend.armed.single.body, contains('Morning'));
-      expect(backend.armed.single.body, contains('8:00 AM UTC'));
+      expect(backend.armed.single.body, contains('08:00 UTC'));
     });
 
     test('clears the armed notice when nothing is enabled', () async {
