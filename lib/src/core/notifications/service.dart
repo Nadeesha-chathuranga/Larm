@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
@@ -21,6 +22,11 @@ class NotificationService {
   /// Dedicated slot for the silent "alarm armed" status notice. Kept separate
   /// from fire ids so cancelling a fire never hides the armed indicator.
   static const int armedNotificationId = 0x4C41524D;
+
+  /// Native channel implemented by `MainActivity.kt`. The notifications plugin
+  /// can request the full-screen intent permission but cannot query it.
+  static const String fsiChannelName = 'com.larm.larm/fsi';
+  static const MethodChannel _fsiChannel = MethodChannel(fsiChannelName);
 
   /// Whether [init] completed without throwing.
   static bool get isReady => _ready;
@@ -93,6 +99,32 @@ class NotificationService {
   static Future<bool?> requestFullScreenIntent() =>
       _android?.requestFullScreenIntentPermission() ?? Future.value(true);
 
+  /// Reads the Android 14+ full-screen intent toggle without opening Settings.
+  /// Falls back to `true` below Android 14 and when the channel is unavailable
+  /// (tests/desktop) so the UI doesn't show a false warning.
+  static Future<bool> canUseFullScreenIntent() async {
+    try {
+      return await _fsiChannel.invokeMethod<bool>('canUseFullScreenIntent') ??
+          true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Deep-links directly to Larm's Android 14+ full-screen intent toggle.
+  /// The plugin's request method only opens the generic settings list and does
+  /// not highlight this app, which made the required toggle hard to find.
+  static Future<bool> openFullScreenIntentSettings() async {
+    try {
+      return await _fsiChannel.invokeMethod<bool>(
+            'openFullScreenIntentSettings',
+          ) ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Requests notification, exact-alarm and full-screen permissions in the
   /// product order. Returns false when a fire still cannot be shown reliably,
   /// so callers can fall back to inexact scheduling and tell the user.
@@ -104,8 +136,12 @@ class NotificationService {
       if (!await canScheduleExact()) {
         await requestExactAlarms();
       }
-      await requestFullScreenIntent();
-      return notifications && await canScheduleExact();
+      final exact = await canScheduleExact();
+      if (!await canUseFullScreenIntent()) {
+        await openFullScreenIntentSettings();
+      }
+      final fullScreen = await canUseFullScreenIntent();
+      return notifications && exact && fullScreen;
     } catch (_) {
       return false;
     }

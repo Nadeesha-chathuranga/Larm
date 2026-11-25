@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:audioplayers/audioplayers.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +11,9 @@ import '../../core/audio/sounds.dart';
 import '../../core/haptics.dart';
 import '../../core/motion.dart';
 import '../../core/theme/tokens.dart';
+import '../../core/notifications/channels.dart';
+import '../../core/notifications/fire_handoff.dart';
+import '../../core/notifications/fire_launcher.dart';
 import '../../core/notifications/scheduler.dart';
 import '../../core/time/clock.dart';
 import '../../data/models/alarm.dart';
@@ -52,6 +58,11 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
   String? _autoAction;
   late int _remaining;
 
+  AudioPlayer? _ringPlayer;
+  Timer? _ringTimer;
+  bool _ringStarted = false;
+  StreamSubscription<PendingFire>? _actionSub;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -74,7 +85,20 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
         remaining ??
         ref.read(settingsControllerProvider).snoozeCount;
 
+    // A late notification action must act on this page, not push a duplicate.
+    final key = _timerId != null ? 'timer:$_timerId' : 'alarm:$_alarmId';
+    _actionSub = FireHandoff.liveActions.listen((fire) {
+      if (!mounted || _handled) return;
+      if ('${fire.kind}:${fire.id}' != key) return;
+      if (fire.autoAction == 'stop') {
+        unawaited(_stop());
+      } else if (fire.autoAction == 'snooze') {
+        unawaited(_snooze());
+      }
+    });
+
     _buzz();
+    _watchNotificationSound();
     final auto = _autoAction;
     if (auto == 'stop') {
       WidgetsBinding.instance.addPostFrameCallback((_) => _stop());
@@ -98,6 +122,84 @@ class _TriggerPageState extends ConsumerState<TriggerPage> {
     } catch (_) {
       // No vibrator / no platform channel: silent no-op.
     }
+  }
+
+  /// The notification normally loops the tone with `FLAG_INSISTENT`. Some OEMs
+  /// dismiss it as soon as the full-screen intent is consumed, so continue the
+  /// same tone in-app for the rest of the 10-second ring window.
+  Future<void> _watchNotificationSound() async {
+    final alarmId = _alarmId;
+    final timerId = _timerId;
+    if (alarmId == null && timerId == null) return;
+    final notificationId = alarmId != null
+        ? AlarmScheduler.notificationIdForAlarm(alarmId)
+        : AlarmScheduler.notificationIdForTimer(timerId!);
+    final started = await FireLauncher.lastFireAt() ?? DateTime.now();
+    if (!mounted) return;
+    _ringTimer = Timer.periodic(
+      const Duration(milliseconds: 400),
+      (timer) async {
+        if (!mounted || _ringStarted) {
+          timer.cancel();
+          return;
+        }
+        if (DateTime.now().difference(started).inMilliseconds >= alarmRingMs) {
+          timer.cancel();
+          return;
+        }
+        final active = await FireLauncher.isNotificationActive(notificationId);
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+        if (!active) {
+          _ringStarted = true;
+          timer.cancel();
+          await _startRingAudio(started);
+        }
+      },
+    );
+  }
+
+  Future<void> _startRingAudio(DateTime started) async {
+    final remaining =
+        alarmRingMs - DateTime.now().difference(started).inMilliseconds;
+    if (remaining <= 0) return;
+    final selected = ref.read(settingsControllerProvider).defaultSoundId;
+    final sound =
+        selected != 'system' && isKnownSound(selected) ? selected : 'classic_chime';
+    try {
+      final player = AudioPlayer();
+      await player.setReleaseMode(ReleaseMode.loop);
+      await player.play(AssetSource('sounds/$sound.wav'));
+      if (!mounted) {
+        unawaited(player.stop());
+        unawaited(player.dispose());
+        return;
+      }
+      _ringPlayer = player;
+      _ringTimer = Timer(Duration(milliseconds: remaining), _stopRingAudio);
+    } catch (_) {
+      // Missing asset/audio focus: the vibration still continues.
+    }
+  }
+
+  void _stopRingAudio() {
+    _ringTimer?.cancel();
+    _ringTimer = null;
+    final player = _ringPlayer;
+    _ringPlayer = null;
+    if (player != null) {
+      unawaited(player.stop());
+      unawaited(player.dispose());
+    }
+  }
+
+  @override
+  void dispose() {
+    _actionSub?.cancel();
+    _stopRingAudio();
+    super.dispose();
   }
 
   Alarm? get _alarm => _alarmId == null

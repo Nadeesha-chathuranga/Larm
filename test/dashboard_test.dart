@@ -3,9 +3,11 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 
 import 'package:larm/src/data/models/alarm.dart';
+import 'package:larm/src/core/notifications/service.dart';
 import 'package:larm/src/data/repos/alarm_repo.dart';
 import 'package:larm/src/features/dashboard/widgets/alarm_tile.dart';
 
@@ -98,6 +100,38 @@ void main() {
         isFalse,
       );
     });
+  });
+
+  testWidgets('prompts when full-screen intent permission is off', (
+    WidgetTester tester,
+  ) async {
+    const channel = MethodChannel(NotificationService.fsiChannelName);
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'canUseFullScreenIntent') return false;
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(channel, null),
+    );
+
+    await tester.runAsync(() async {
+      await tester.pumpWidget(
+        await dashboardScope(dir: dir, suffix: 'fsi-off'),
+      );
+      await tester.pump();
+      await settle(tester, 4);
+    });
+
+    expect(find.text('Full-screen alarms off'), findsOneWidget);
+    expect(
+      find.text(
+        'Alarms only show in the shade. Let Larm take over the screen '
+        'when an alarm rings.',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('hero shows UTC only', (WidgetTester tester) async {

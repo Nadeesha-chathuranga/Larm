@@ -12,6 +12,8 @@
 * [x] Scheduler: stable 31-bit ids, follow/override/tone channel routing,
   snooze math, timer completion, syncAll counts, action parsing.
 * [x] 22 bundled tone ids are raw-safe and produce 22 tone channels.
+* [x] Late duplicate fire callbacks do not push a second `/trigger` route; a
+  late Stop/Snooze action is delivered to the already-open page instead.
 
 ## Manual — permissions (Android 14+, fresh install)
 
@@ -37,6 +39,21 @@
 * [ ] Two alarms same minute: stack as sequential trigger routes; popping
   the top reveals the next.
 * [ ] Notification Cancel/Snooze action buttons work from lock shade.
+* [x] FSI auto-pop: alarm fires while app killed → ringing page appears
+  without tapping the notification (verified 2026-11-25, screen off + killed,
+  `SM A536E` / Android 16). Note: `am force-stop` cancels both AlarmManager
+  schedules on this Samsung build; use Recents swipe or `am kill` instead.
+* [x] FSI auto-pop: alarm fires while app backgrounded → ringing page is
+  pushed automatically over the previous route (verified 2026-11-25, screen on
+  + backgrounded).
+* [x] FSI auto-pop: alarm fires while app is foregrounded → ringing page is
+  pushed automatically (verified 2026-11-25, `SM A536E` / Android 16). Samsung
+  suppresses the OS FSI while interactive, so `FireLauncher` schedules a
+  companion exact alarm that re-dispatches `SELECT_NOTIFICATION`; its
+  PendingIntent opts into background activity starts (`FLAG_INSISTENT` for
+  sound is separate). No notification tap is needed.
+* [ ] Killed-app notification action opens the page and applies Stop/Snooze
+  once, without leaving a second ringing page behind.
 * [ ] Killed-app tap on notification opens the trigger page (launch details).
 * [ ] Reboot with enabled alarms → fires still occur (boot receiver +
   cold-start resync).
@@ -58,8 +75,34 @@
   alarm tiles have no UTC badge.
 * [ ] All 10 Popular tones preview in-app and play through their notification
   channels when used as the global alarm tone.
+* [x] Fire sound repeats for ~10s via `Notification.FLAG_INSISTENT` and stops
+  when `timeoutAfter` cancels the notification; the ringing page remains for
+  Snooze/Cancel (verified 2026-11-25: `RingtonePlayer` start 11:06:44.8 → stop
+  11:06:54.1 after a killed/screen-off fire). Bundled tones are only 2.4–4s, so
+  looping is required. If an OEM cancels the notification early, `TriggerPage`
+  continues the global tone in-app for the remainder of the 10s window.
 * [ ] Changing the tone/vibration in Settings applies to every alarm and timer;
   the editor shows no per-alarm sound or vibration controls.
+
+## Device findings (2026-11-25, `SM A536E` / Android 16)
+
+* `flutter_local_notifications` 22.3.3 does **not** auto-register
+  `ScheduledNotificationReceiver`; without the explicit manifest `<receiver>`
+  entry the OS delivered the schedule broadcast but no notification was posted.
+  Fixed in `android/app/src/main/AndroidManifest.xml`.
+* Full-screen intent permission was already granted. While the screen was on
+  and the user was interactive, Samsung showed only the alarm heads-up; the OS
+  FSI was not invoked. `FireLauncher` now provides the direct pop path.
+* Android 16 blocked the first direct launch with `BAL_BLOCK`; the companion
+  PendingIntent now uses `ActivityOptions.setPendingIntentCreatorBackgroundActivityStartMode(
+  MODE_BACKGROUND_ACTIVITY_START_ALLOWED)`. A foreground service alone no
+  longer grants a general activity-start exception; the silent companion FSI
+  is the supported path from a killed/cached app.
+* The OS alarm, its FSI and the companion exact alarm can all report the same
+  fire seconds apart. A 90-second persisted dedupe window now suppresses the
+  late duplicates that previously stacked two `/trigger` routes; Stop/Snooze
+  actions arriving late are delivered to the open page via a broadcast stream.
+  Verified 2026-11-25: one Cancel closes the ringing page after a killed fire.
 
 ## Manual — upgrade + scale
 

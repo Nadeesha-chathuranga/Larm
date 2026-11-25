@@ -4,10 +4,12 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:larm/src/app.dart';
 import 'package:larm/src/core/nav.dart';
 import 'package:larm/src/core/notifications/background_handler.dart';
+import 'package:larm/src/core/notifications/fire_handoff.dart';
 import 'package:larm/src/core/notifications/scheduler.dart';
 import 'package:larm/src/data/models/alarm.dart';
 import 'package:larm/src/data/models/larm_timer.dart';
@@ -18,7 +20,7 @@ import 'package:larm/src/data/repos/timer_repo.dart';
 import 'package:larm/src/features/trigger/trigger_page.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
-import 'widget_test.dart' show testAlarm, testTimer;
+import 'widget_test.dart' show dashboardScope, testAlarm, testTimer;
 
 class FakeBackend implements AlarmBackend {
   final scheduled = <ScheduledFire>[];
@@ -426,6 +428,45 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('Morning routed'), findsOneWidget);
+  });
+
+  testWidgets('queued fire pops up automatically once navigator is ready',
+      (WidgetTester tester) async {
+    late Directory handoffDir;
+    await tester.runAsync(() async {
+      handoffDir = await Directory.systemTemp.createTemp('larm_handoff');
+      addTearDown(() async {
+        try {
+          await Hive.close().timeout(const Duration(seconds: 10));
+        } catch (_) {
+          // Best effort only.
+        }
+        try {
+          await handoffDir.delete(recursive: true).timeout(
+                const Duration(seconds: 10),
+              );
+        } catch (_) {
+          // Best effort only.
+        }
+      });
+
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      // Simulates an FSI callback that arrived before runApp() attached the
+      // navigator: the fire must survive until LarmApp drains it.
+      await FireHandoff.enqueue(kind: 'alarm', id: 'queued');
+
+      await tester.pumpWidget(
+        await dashboardScope(
+          dir: handoffDir,
+          suffix: 'handoff',
+          alarms: [_dailyAlarm('queued')],
+        ),
+      );
+      await tester.pump();
+      await spin(tester, 6);
+    });
+
+    expect(find.text('Morning queued'), findsOneWidget);
   });
 
   group('parseFirePayload', () {

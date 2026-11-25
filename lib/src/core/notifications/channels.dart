@@ -14,6 +14,12 @@ const String larmFollowV2 = 'larm_follow_v2';
 const String larmOverrideV2 = 'larm_override_v2';
 const String larmArmedV2 = 'larm_armed_v2';
 
+/// Bundled tones are 2.4–4s. `FLAG_INSISTENT` (4) makes Android repeat the
+/// channel sound until the notification is cancelled; `timeoutAfter` closes
+/// that ring window after ~10s. The ringing page stays open for snooze/stop.
+const int alarmRingMs = 10 * 1000;
+const int insistentNotificationFlag = 4; // Notification.FLAG_INSISTENT
+
 String toneChannelId(String soundId) => 'larm_tone_${soundId}_v2';
 
 /// Legacy v1 ids, deleted in [NotificationService.init].
@@ -121,6 +127,8 @@ AndroidNotificationDetails alarmDetails({
     enableVibration: !vibrationOff,
     vibrationPattern: vibrationOff ? null : vibrationPattern,
     audioAttributesUsage: AudioAttributesUsage.alarm,
+    timeoutAfter: alarmRingMs,
+    additionalFlags: Int32List.fromList(const [insistentNotificationFlag]),
     actions: [
       AndroidNotificationAction(
         snoozeActionId(entryId),

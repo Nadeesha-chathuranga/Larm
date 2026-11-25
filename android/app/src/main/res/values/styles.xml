@@ -19,4 +19,14 @@
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
+    <!-- Invisible launch bridge. It only forwards the fire intent to the
+         ringing page, so it must never flash a window or enter Recents. -->
+    <style name="FireLaunchTheme" parent="@android:style/Theme.Translucent.NoTitleBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+    </style>
 </resources>

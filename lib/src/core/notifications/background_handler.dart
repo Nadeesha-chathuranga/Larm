@@ -1,6 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-import '../nav.dart';
+import 'fire_handoff.dart';
 
 /// Background notification tap/action handler.
 ///
@@ -9,8 +11,10 @@ import '../nav.dart';
 /// parses the payload/action and routes to the trigger page, which performs
 /// stop/snooze through providers once the app is foregrounded.
 ///
-/// Simultaneous fires stack as sequential `/trigger` routes (M5 queue
-/// decision): each fire pushes; dismissing the top reveals the next.
+/// Simultaneous fires queue as sequential `/trigger` routes (M5 queue
+/// decision): each fire is handed off; dismissing the top reveals the next.
+/// `enqueue` survives a cold full-screen-intent launch, where the navigator
+/// does not exist yet when this callback runs.
 @pragma('vm:entry-point')
 void onBgAction(NotificationResponse response) {
   final fire = parseFirePayload(response.payload);
@@ -20,12 +24,12 @@ void onBgAction(NotificationResponse response) {
   if (action != null && (action.kind == 'stop' || action.kind == 'snooze')) {
     auto = action.kind;
   }
-  larmNavigatorKey.currentState?.pushNamed(
-    '/trigger',
-    arguments: <String, Object?>{
-      '${fire.kind}Id': fire.id,
-      'autoAction': auto,
-    },
+  unawaited(
+    FireHandoff.enqueue(
+      kind: fire.kind,
+      id: fire.id,
+      autoAction: auto,
+    ),
   );
 }
 

@@ -8,10 +8,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../core/haptics.dart';
-import '../../core/nav.dart';
 import '../../core/prefs.dart';
 import '../../core/theme/tokens.dart';
-import '../../core/notifications/background_handler.dart' show parseFirePayload;
+import '../../core/notifications/background_handler.dart'
+    show parseAlarmAction, parseFirePayload;
+import '../../core/notifications/fire_handoff.dart';
 import '../../core/notifications/scheduler.dart';
 import '../../core/notifications/service.dart';
 import '../../core/time/clock.dart';
@@ -67,13 +68,14 @@ class DashboardPage extends ConsumerStatefulWidget {
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
   bool? _exactOk;
+  bool? _fsiOk;
   bool _launchChecked = false;
   bool _legacyNoticeChecked = false;
 
   @override
   void initState() {
     super.initState();
-    _refreshExactStatus();
+    _refreshPermissionStatus();
   }
 
   @override
@@ -91,27 +93,82 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       final details = await NotificationService.plugin
           .getNotificationAppLaunchDetails();
       if (details?.didNotificationLaunchApp != true) return;
-      final fire = parseFirePayload(details?.notificationResponse?.payload);
+      final response = details?.notificationResponse;
+      final fire = parseFirePayload(response?.payload);
       if (fire == null || !mounted) return;
-      larmNavigatorKey.currentState?.pushNamed(
-        '/trigger',
-        arguments: <String, Object?>{'${fire.kind}Id': fire.id},
+      final action = parseAlarmAction(response?.actionId);
+      final auto =
+          action != null && (action.kind == 'stop' || action.kind == 'snooze')
+              ? action.kind
+              : null;
+      await FireHandoff.enqueue(
+        kind: fire.kind,
+        id: fire.id,
+        autoAction: auto,
       );
     } catch (_) {
       // Best effort; taps also route through onBgAction when alive.
     }
   }
 
-  /// Exact-alarm status check. Never throws: platform channels are absent in
-  /// widget tests and on desktop, where exact alarms are assumed available.
-  Future<void> _refreshExactStatus() async {
-    bool ok = true;
+  /// Permission status check. Never throws: platform channels are absent in
+  /// widget tests and on desktop, where both are assumed available.
+  Future<void> _refreshPermissionStatus() async {
+    bool exact = true;
+    bool fullScreen = true;
     try {
-      ok = await NotificationService.canScheduleExact();
+      exact = await NotificationService.canScheduleExact();
     } catch (_) {
-      ok = true;
+      exact = true;
     }
-    if (mounted) setState(() => _exactOk = ok);
+    try {
+      fullScreen = await NotificationService.canUseFullScreenIntent();
+    } catch (_) {
+      fullScreen = true;
+    }
+    if (mounted) {
+      setState(() {
+        _exactOk = exact;
+        _fsiOk = fullScreen;
+      });
+    }
+  }
+
+  /// Explains and opens the Android 14+ full-screen intent setting. Without
+  /// this toggle the system only shows a heads-up/notification-shade alert.
+  Future<void> _enableFullScreen() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Full-screen alarms'),
+        content: const Text(
+          'Android can show an alarm only in the notification shade. Turn on '
+          'full-screen intent for Larm so a ringing alarm takes over the '
+          'screen, even when it is locked.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Later'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Open settings'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final opened = await NotificationService.openFullScreenIntentSettings();
+    if (!opened) {
+      // OEM fallback: the generic list still exposes the toggle.
+      try {
+        await NotificationService.requestFullScreenIntent();
+      } catch (_) {
+        // Best effort; the banner stays until the toggle is actually on.
+      }
+    }
+    await _refreshPermissionStatus();
   }
 
   /// One-time explanation after the UTC-only migration disabled old Local
@@ -180,7 +237,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       // Best effort; banner reappears if still denied.
     }
     await _resyncAll();
-    await _refreshExactStatus();
+    await _refreshPermissionStatus();
   }
 
   Future<void> _resyncAll() async {
@@ -233,13 +290,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       schedulingOk = false;
     }
     await _refreshArmed();
-    await _refreshExactStatus();
+    await _refreshPermissionStatus();
     if (!mounted) return;
     if (!permissionsOk || !schedulingOk) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Alarm may not fire: allow notifications and exact alarms.',
+            'Alarm may not pop up: allow notifications, exact alarms and '
+            'full-screen display.',
           ),
         ),
       );
@@ -420,6 +478,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     }
 
     final showBanner = _exactOk == false;
+    final showFsiBanner = _fsiOk == false;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -447,6 +506,30 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               subtitle: const Text('Alarms may arrive late.'),
               trailing: FilledButton(
                 onPressed: _enableAlarms,
+                child: const Text('Enable'),
+              ),
+            ),
+          ),
+        ],
+        if (showFsiBanner) ...[
+          const SizedBox(height: 12),
+          GlassCard(
+            tint: LarmPalette.amber.withValues(alpha: 0.08),
+            accent: LarmPalette.amber,
+            glow: false,
+            child: ListTile(
+              leading: const GlassIcon(
+                icon: LucideIcons.bellRing,
+                color: LarmPalette.amber,
+                boxSize: 40,
+              ),
+              title: const Text('Full-screen alarms off'),
+              subtitle: const Text(
+                'Alarms only show in the shade. Let Larm take over the screen '
+                'when an alarm rings.',
+              ),
+              trailing: FilledButton(
+                onPressed: _enableFullScreen,
                 child: const Text('Enable'),
               ),
             ),

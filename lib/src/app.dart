@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/nav.dart';
+import 'core/notifications/fire_handoff.dart';
 import 'core/theme/tokens.dart';
 import 'features/dashboard/dashboard_page.dart';
 import 'features/editor/editor_page.dart';
@@ -10,11 +11,54 @@ import 'features/trigger/trigger_page.dart';
 
 /// App shell. Larm always uses the single dark Aurora glass theme; routes
 /// are thin wrappers around the feature pages.
-class LarmApp extends ConsumerWidget {
+class LarmApp extends ConsumerStatefulWidget {
   const LarmApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LarmApp> createState() => _LarmAppState();
+}
+
+class _LarmAppState extends ConsumerState<LarmApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    FireHandoff.setDrainCallback(_drain);
+    // A full-screen intent can fire while Flutter is still booting. Drain
+    // again on the first frame, once the navigator key is attached.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _drain());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    FireHandoff.clearDrainCallback(_drain);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // A full-screen intent on an already-running app only resumes MainActivity;
+    // drain here as well as on the notification callback.
+    if (state == AppLifecycleState.resumed) _drain();
+  }
+
+  /// Opens every queued fire as the modal ringing page. Notification callbacks
+  /// call this through [FireHandoff] so cold starts aren't lost.
+  Future<void> _drain() async {
+    if (!mounted) return;
+    final navigator = larmNavigatorKey.currentState;
+    if (navigator == null) return;
+    await FireHandoff.drain((fire) async {
+      if (!mounted) return false;
+      navigator.pushNamed('/trigger', arguments: fire.arguments);
+      return true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Larm',
       navigatorKey: larmNavigatorKey,

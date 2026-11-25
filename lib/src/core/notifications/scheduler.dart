@@ -7,6 +7,7 @@ import '../../data/models/alarm.dart';
 import '../../data/models/larm_timer.dart';
 import '../../data/models/settings.dart';
 import 'channels.dart';
+import 'fire_launcher.dart';
 import 'service.dart';
 
 /// One scheduled OS notification. Backend-agnostic so the scheduler is
@@ -42,17 +43,29 @@ abstract class AlarmBackend {
 
 class PluginBackend implements AlarmBackend {
   @override
-  Future<void> schedule(ScheduledFire fire) => NotificationService.scheduleFire(
-    id: fire.id,
-    title: fire.title,
-    body: fire.body,
-    when: fire.when,
-    details: fire.details,
-    payload: fire.payload,
-  );
+  Future<void> schedule(ScheduledFire fire) async {
+    await NotificationService.scheduleFire(
+      id: fire.id,
+      title: fire.title,
+      body: fire.body,
+      when: fire.when,
+      details: fire.details,
+      payload: fire.payload,
+    );
+    // Android suppresses FSI while the screen is on, so pair the notification
+    // with a direct trigger-page launch alarm. Same id keeps the slots aligned.
+    await FireLauncher.schedule(
+      id: fire.id,
+      when: fire.when,
+      payload: fire.payload,
+    );
+  }
 
   @override
-  Future<void> cancel(int id) => NotificationService.cancel(id);
+  Future<void> cancel(int id) async {
+    await NotificationService.cancel(id);
+    await FireLauncher.cancel(id);
+  }
 
   @override
   Future<void> updateArmed({required String title, required String body}) =>

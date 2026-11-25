@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:larm/src/core/notifications/background_handler.dart';
+import 'package:larm/src/core/notifications/channels.dart';
 import 'package:larm/src/core/notifications/scheduler.dart';
 import 'package:larm/src/data/models/alarm.dart';
 import 'package:larm/src/data/models/larm_timer.dart';
@@ -342,6 +343,21 @@ void main() {
       );
       expect(backend.armed, isEmpty);
       expect(backend.armedCleared, isTrue);
+    });
+  });
+
+  group('alarmDetails', () {
+    test('repeats the short bundled tone for a ~10s ring window', () {
+      final details = alarmDetails(
+        overrideMode: false,
+        entryId: 'a1',
+        payload: 'alarm:a1',
+        soundId: 'glass_chime',
+        vibrationId: 'short',
+      );
+      expect(details.timeoutAfter, alarmRingMs);
+      expect(details.additionalFlags, isNotNull);
+      expect(details.additionalFlags!.contains(insistentNotificationFlag), isTrue);
     });
   });
 
