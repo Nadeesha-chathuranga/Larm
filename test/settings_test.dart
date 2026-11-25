@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce_flutter/hive_ce_flutter.dart';
@@ -57,38 +59,114 @@ void main() {
   });
 
   group('channels', () {
-    test('channelFor routes override/tone/system correctly', () {
+    test('channelFor encodes tone and volume in a versioned channel id', () {
       expect(
-        channelFor(overrideMode: true, soundId: 'glass_chime'),
-        larmOverrideV2,
+        channelFor(
+          overrideMode: true,
+          soundId: 'glass_chime',
+          volume: 50,
+        ),
+        'larm_override_v3_glass_chime_v50',
       );
       expect(
-        channelFor(overrideMode: false, soundId: 'glass_chime'),
-        'larm_tone_glass_chime_v2',
+        channelFor(
+          overrideMode: false,
+          soundId: 'system',
+          volume: 35,
+        ),
+        'larm_follow_v3_glass_chime_v40',
       );
-      expect(channelFor(overrideMode: false, soundId: 'system'), larmFollowV2);
-      expect(channelFor(overrideMode: false, soundId: 'nope'), larmFollowV2);
+      expect(fireChannelIds(soundId: 'zen_bowl', volume: 70), [
+        'larm_follow_v3_zen_bowl_v70',
+        'larm_override_v3_zen_bowl_v70',
+      ]);
     });
 
-    test('v2 set has status + follow + 22 tones + override with bypass', () {
-      final channels = v2Channels();
-      expect(channels, hasLength(26));
+    test('status channels stay silent', () {
+      final channels = staticChannels();
+      expect(channels, hasLength(2));
       final armed = channels.singleWhere((c) => c.id == larmArmedV2);
       expect(armed.playSound, isFalse);
       expect(armed.enableVibration, isFalse);
       final rang = channels.singleWhere((c) => c.id == larmRangV2);
       expect(rang.playSound, isFalse);
       expect(rang.enableVibration, isFalse);
-      final override = channels.singleWhere((c) => c.id == larmOverrideV2);
+    });
+
+    test('fire channel sound reflects the volume bucket', () {
+      final follow = fireChannel(
+        id: channelFor(
+          overrideMode: false,
+          soundId: 'glass_chime',
+          volume: 35,
+        ),
+        name: 'Alarms',
+        soundId: 'glass_chime',
+        volume: 35,
+        bypassDnd: false,
+      );
+      expect(follow.playSound, isTrue);
+      expect(follow.bypassDnd, isFalse);
+      expect(follow.sound, isA<RawResourceAndroidNotificationSound>());
+      expect(
+        (follow.sound! as RawResourceAndroidNotificationSound).sound,
+        'glass_chime_v40',
+      );
+
+      final muted = fireChannel(
+        id: channelFor(
+          overrideMode: false,
+          soundId: 'glass_chime',
+          volume: 0,
+        ),
+        name: 'Alarms',
+        soundId: 'glass_chime',
+        volume: 0,
+        bypassDnd: false,
+      );
+      expect(muted.playSound, isFalse);
+      expect(muted.sound, isNull);
+    });
+
+    test('override channel bypasses DND and uses the same scaled tone', () {
+      final override = fireChannel(
+        id: channelFor(
+          overrideMode: true,
+          soundId: 'zen_bowl',
+          volume: 100,
+        ),
+        name: 'Alarms (override)',
+        soundId: 'zen_bowl',
+        volume: 100,
+        bypassDnd: true,
+      );
       expect(override.bypassDnd, isTrue);
-      expect(override.importance, isNotNull);
-      final tones = channels
-          .where((c) => c.id.startsWith('larm_tone_'))
-          .toList();
-      expect(tones, hasLength(22));
-      for (final tone in tones) {
-        expect(tone.sound, isNotNull);
-      }
+      expect(
+        (override.sound! as RawResourceAndroidNotificationSound).sound,
+        'zen_bowl_v100',
+      );
+    });
+
+    test('volume buckets round up to 10% steps and system uses default tone',
+        () {
+      expect(volumeBucket(0), 0);
+      expect(volumeBucket(1), 10);
+      expect(volumeBucket(10), 10);
+      expect(volumeBucket(11), 20);
+      expect(volumeBucket(100), 100);
+      expect(rawSoundForVolume('system', 35), 'glass_chime_v40');
+      expect(rawSoundForVolume('nope', 70), 'glass_chime_v70');
+      expect(rawSoundForVolume('glass_chime', 60), 'glass_chime_v60');
+    });
+
+    test('legacy v2 and unversioned v3 channel ids are removed on upgrade', () {
+      final legacy = legacyChannelIds();
+      expect(legacy, contains('larm_follow_v2'));
+      expect(legacy, contains('larm_override_v2'));
+      expect(legacy, contains('larm_tone_glass_chime_v2'));
+      expect(legacy, contains('larm_follow_v3'));
+      expect(legacy, contains('larm_override_v3'));
+      expect(legacy, hasLength(28));
     });
 
     test('sound catalog is stable and vibration falls back', () {
@@ -223,6 +301,26 @@ void main() {
       await tapVisible(tester, find.text('Double'));
       await spin(tester, 4);
       expect(container.read(settingsControllerProvider).defaultVibId, 'double');
+    });
+  });
+
+  testWidgets('volume slider stores a real 0-100 value', (
+    WidgetTester tester,
+  ) async {
+    late ProviderContainer container;
+    await tester.runAsync(() async {
+      await tester.pumpWidget(await dashboardScope(dir: dir, suffix: 'volume'));
+      await tester.pump();
+      container = ProviderScope.containerOf(tester.element(find.text('Larm')));
+
+      await tester.tap(find.byTooltip('Settings'));
+      await spin(tester);
+      await tapVisible(tester, find.byKey(const Key('alarm-volume-slider')));
+      await spin(tester, 4);
+
+      final volume = container.read(settingsControllerProvider).alarmVolume;
+      expect(volume, inInclusiveRange(40, 60));
+      expect(volume, isNot(1));
     });
   });
 }

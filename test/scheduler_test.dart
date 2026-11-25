@@ -131,7 +131,10 @@ void main() {
         expect(fire.id, AlarmScheduler.notificationIdForAlarm('a1'));
         expect(fire.when, tz.TZDateTime.utc(2026, 9, 17, 8, 0));
         expect(fire.payload, 'alarm:a1');
-        expect(fire.details.android?.channelId, 'larm_tone_glass_chime_v2');
+        expect(
+          fire.details.android?.channelId,
+          'larm_follow_v3_glass_chime_v100',
+        );
         expect(fire.details.android?.fullScreenIntent, isTrue);
         expect(fire.details.android?.actions?.length, 2);
       },
@@ -158,7 +161,10 @@ void main() {
         now: DateTime.utc(2026, 9, 17, 7, 0),
       );
       final fire = backend.scheduled.single;
-      expect(fire.details.android?.channelId, 'larm_override_v2');
+      expect(
+        fire.details.android?.channelId,
+        'larm_override_v3_glass_chime_v100',
+      );
       expect(fire.details.android?.channelBypassDnd, isTrue);
     });
 
@@ -173,7 +179,7 @@ void main() {
         );
         expect(
           backend.scheduled.single.details.android?.channelId,
-          'larm_follow_v2',
+          'larm_follow_v3_glass_chime_v100',
         );
       },
     );
@@ -188,7 +194,7 @@ void main() {
       );
       expect(
         backend.scheduled.single.details.android?.channelId,
-        'larm_tone_zen_bowl_v2',
+        'larm_follow_v3_zen_bowl_v100',
       );
     });
 
@@ -270,7 +276,7 @@ void main() {
       );
       expect(
         backend.scheduled.single.details.android?.channelId,
-        'larm_tone_zen_bowl_v2',
+        'larm_follow_v3_zen_bowl_v100',
       );
     });
 
@@ -404,6 +410,7 @@ void main() {
         entryId: 'a1',
         payload: 'alarm:a1',
         soundId: 'glass_chime',
+        volume: 100,
         vibrationId: 'short',
       );
       expect(details.timeoutAfter, alarmRingMs);
@@ -417,6 +424,7 @@ void main() {
         entryId: 'a1',
         payload: 'alarm:a1',
         soundId: 'glass_chime',
+        volume: 100,
         vibrationId: 'short',
         ringMs: 45_000,
       );

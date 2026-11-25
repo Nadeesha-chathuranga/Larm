@@ -65,7 +65,7 @@ object FireLauncher {
     private const val RANG_NOTIFICATION_ID = 0x52414E47
     private const val ARMED_TICK_REQUEST = 0x41524D54
     private const val RING_END_REQUEST_OFFSET = 0x10000000
-    private const val DEFAULT_RING_MS = 10_000L
+    const val DEFAULT_RING_MS = 10_000L
 
     fun register(messenger: BinaryMessenger, context: Context) {
         val app = context.applicationContext
@@ -511,10 +511,15 @@ class FireLaunchBridgeReceiver : BroadcastReceiver() {
         }
         // The FGS activity start is still blocked on Android 16 when Larm has
         // no visible window. A system-sent FSI is the supported exception.
-        showFullScreenBridge(context, id, payload)
+        showFullScreenBridge(context, id, payload, ringMs)
     }
 
-    private fun showFullScreenBridge(context: Context, id: Int, payload: String) {
+    private fun showFullScreenBridge(
+        context: Context,
+        id: Int,
+        payload: String,
+        ringMs: Long,
+    ) {
         val channelId = "larm_fire_fsi_v2"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = context.getSystemService(NotificationManager::class.java)
@@ -536,6 +541,7 @@ class FireLaunchBridgeReceiver : BroadcastReceiver() {
                 FireLauncher.ARG_BRIDGE_NOTIFICATION_ID,
                 FireLauncher.bridgeNotificationId(id),
             )
+            putExtra(FireLauncher.ARG_RING_MS, ringMs.toInt())
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         var flags = PendingIntent.FLAG_UPDATE_CURRENT
@@ -670,11 +676,15 @@ class FireLaunchActivity : Activity() {
         FireLauncher.recordPendingFire(this, payload)
         val id = intent.getIntExtra(FireLauncher.ARG_NOTIFICATION_ID, -1)
         if (id >= 0) {
+            val ringMs = intent.getIntExtra(
+                FireLauncher.ARG_RING_MS,
+                FireLauncher.DEFAULT_RING_MS.toInt(),
+            ).toLong()
             FireLauncher.scheduleRingEnd(
                 this,
                 id,
                 payload,
-                System.currentTimeMillis() + 10_000L,
+                System.currentTimeMillis() + ringMs,
             )
         }
         val launch = Intent(this, MainActivity::class.java).apply {

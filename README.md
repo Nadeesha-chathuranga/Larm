@@ -6,7 +6,7 @@ Larm — a UTC-only alarm &amp; timer app for gaming groups across timezones. Ev
 
 - **UTC only, 24-hour only** — no device-local clock, local alarm mode, or 12-hour toggle; every screen shows UTC in `HH:mm`.
 - **One-time alarms** — choose the exact UTC date with a custom in-app calendar; no repeat modes. The hour and minute wheels loop (`23 → 00`, `59 → 00`).
-- **One sound, one vibration** — pick a tone and vibration pattern once in Settings; a preview bar plays the selected tone. Every alarm and timer uses them. The tone bar includes an in-app volume slider and a shortcut to Android's alarm volume.
+- **One sound, one vibration** — pick a tone and vibration pattern once in Settings; a preview bar plays the selected tone. Every alarm and timer uses them. The tone bar has a real 0–100% alarm-volume slider that scales the scheduled notification tone, plus a shortcut to Android's alarm volume for the system tone.
 - **Configurable ring duration** — choose how long a fire keeps ringing (5–300s, default 10s). When the window ends, the ringing notification/full-screen page closes and a silent "Alarm rang at HH:mm UTC" notice remains until tapped.
 - **Snooze you can see** — snoozed alarms and timers show an amber badge with the remaining snoozes and live countdown; the notification shade shows the same UTC time and remaining count.
 - **Pure-black glass** — one true-black theme with dark inward-glow cards, crisp glass edges and a high-contrast UTC clock.

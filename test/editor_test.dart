@@ -28,9 +28,13 @@ Future<void> spin(WidgetTester tester, [int frames = 8]) async {
 /// the tree), up to ~2s. Prevents matching editor text against the
 /// dashboard tile underneath mid-transition.
 Future<void> pumpUntilPopped(WidgetTester tester) async {
-  for (var i = 0; i < 20 && find.byType(TextField).evaluate().isNotEmpty; i++) {
+  for (var i = 0; i < 30; i++) {
+    final editorStillOpen = find.byType(TextField).evaluate().isNotEmpty ||
+        find.text('Start timer').evaluate().isNotEmpty ||
+        find.text('Save alarm').evaluate().isNotEmpty;
+    if (!editorStillOpen) break;
     await Future<void>.delayed(const Duration(milliseconds: 100));
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
   }
 }
 

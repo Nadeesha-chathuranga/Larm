@@ -7,8 +7,8 @@ part 'settings.g.dart';
 /// timeFormat: retained for Hive schema stability, but ignored — Larm is
 /// always 24-hour now.
 /// family: index into [LarmThemeFamily] (default 0 = mono).
-/// alarmVolume: 0–100 slider for tone previews and the in-app fallback ring.
-/// The OS notification tone still follows Android's alarm volume.
+/// alarmVolume: 0–100 slider. It scales previews, the in-app fallback ring,
+/// and the gain-scaled raw tone used by the scheduled Android notification.
 /// ringDurationSec: how long a fire rings before the notification/FSI closes.
 @HiveType(typeId: 2)
 class Settings extends HiveObject {

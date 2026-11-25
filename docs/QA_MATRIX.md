@@ -108,9 +108,9 @@
 * [ ] Lucide icons and the subtle hero UTC hint are legible on small screens;
   every displayed time uses 24-hour `HH:mm`.
 * [ ] Settings is single-level and the Alarm tone section has a named preview
-  bar with a play button, an in-app volume slider (0–100%), and a
-  `System alarm volume` shortcut. The slider changes previews and the in-app
-  fallback ring; the scheduled notification follows Android's alarm stream.
+  bar with a play button, a real 0–100% alarm-volume slider, and a
+  `System alarm volume` shortcut. The slider scales previews, the in-app
+  fallback ring, and the gain-scaled raw tone used by the Android fire channel.
 * [ ] `Ringing duration` slider offers 5–300s and defaults to 10s; changing it
   reschedules enabled alarms/timers.
 * [ ] All 10 Popular tones preview in-app and play through their notification
@@ -121,6 +121,11 @@
   screen-off fire). Bundled tones are only 2.4–4s, so looping is required. If
   an OEM cancels the notification early, `TriggerPage` continues the global
   tone in-app for the remainder of the 10s window.
+* [x] Volume fix verified on device (2026-11-25): tapping the slider from 50% to
+  90% moved the Flutter value and replaced the fire channels from
+  `larm_follow_v3_pulse_ring_v50` to `larm_follow_v3_pulse_ring_v90`, with the
+  channel sound URI changing from `pulse_ring_v50` to `pulse_ring_v90`
+  (`dumpsys notification --noredact`). The old channels were marked deleted.
 * [ ] Changing the tone/vibration in Settings applies to every alarm and timer;
   the editor shows no per-alarm sound or vibration controls.
 

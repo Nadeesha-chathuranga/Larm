@@ -4,16 +4,24 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../../core/audio/sounds.dart';
 
-/// M6 channel set (v1 ids `larm_follow` / `larm_override_v1` are deleted on
-/// upgrade — channels are immutable, so tones ship as new channel ids).
+/// Notification channel ids.
 ///
-/// Android routes sound per channel, not per notification, hence one follow
-/// channel per bundled tone. Override mode is reliability-first: a single
-/// bypass channel (tone sacrificed for guaranteed DND bypass).
-const String larmFollowV2 = 'larm_follow_v2';
-const String larmOverrideV2 = 'larm_override_v2';
+/// v1 (`larm_follow` / `larm_override_v1`) and v2 (one channel per tone) are
+/// deleted on upgrade. Android channels are immutable, so v3 encodes the
+/// selected tone and volume bucket in each channel id. Changing Settings
+/// creates a fresh channel with a gain-scaled raw sound and removes the old
+/// one, which makes the volume slider change the real scheduled alarm
+/// loudness instead of only the in-app preview.
+const String larmFollowV3 = 'larm_follow_v3';
+const String larmOverrideV3 = 'larm_override_v3';
+const String larmFollowV3Prefix = '${larmFollowV3}_';
+const String larmOverrideV3Prefix = '${larmOverrideV3}_';
 const String larmArmedV2 = 'larm_armed_v2';
 const String larmRangV2 = 'larm_rang_v2';
+
+/// Slider granularity. Volume is stored 0–100 in multiples of ten so the
+/// generated `*_vNN.wav` gain variants match what the user sees.
+const int volumeStepPercent = 10;
 
 /// Bundled tones are 2.4–4s. `FLAG_INSISTENT` (4) makes Android repeat the
 /// channel sound until the notification is cancelled; `timeoutAfter` closes
@@ -26,25 +34,115 @@ const int insistentNotificationFlag = 4; // Notification.FLAG_INSISTENT
 /// window closes. Kept apart from fire ids so the summary survives until tap.
 const int rangNotificationId = 0x52414E47;
 
-String toneChannelId(String soundId) => 'larm_tone_${soundId}_v2';
+/// Legacy ids removed during [NotificationService.init].
+List<String> legacyChannelIds() => <String>[
+      'larm_follow',
+      'larm_override_v1',
+      larmFollowV2,
+      larmOverrideV2,
+      larmFollowV3,
+      larmOverrideV3,
+      for (final sound in alarmSounds)
+        if (sound.id != 'system') 'larm_tone_${sound.id}_v2',
+    ];
 
-/// Legacy v1 ids, deleted in [NotificationService.init].
-const List<String> legacyChannelIds = ['larm_follow', 'larm_override_v1'];
+/// Older ids kept here so upgrade cleanup stays readable.
+const String larmFollowV2 = 'larm_follow_v2';
+const String larmOverrideV2 = 'larm_override_v2';
 
-/// Picks the channel for a fire: override mode always uses the bypass
-/// channel; follow mode uses the tone channel (or the default channel for
-/// `system`/unknown sounds).
-String channelFor({required bool overrideMode, required String soundId}) {
-  if (overrideMode) return larmOverrideV2;
-  if (soundId != 'system' && isKnownSound(soundId)) {
-    return toneChannelId(soundId);
-  }
-  return larmFollowV2;
+/// Rounds a stored 0–100 volume to the generated gain bucket. Zero means mute;
+/// any positive value maps to 10–100 so the channel always has a valid raw
+/// resource even though a muted channel does not play it.
+int volumeBucket(int volume) {
+  if (volume <= 0) return 0;
+  final rounded = ((volume + volumeStepPercent - 1) ~/ volumeStepPercent) *
+      volumeStepPercent;
+  return rounded.clamp(volumeStepPercent, 100);
 }
 
-/// Full set of v2 channels to create at startup.
-List<AndroidNotificationChannel> v2Channels() => [
-      const AndroidNotificationChannel(
+/// Raw resource for a tone at the current gain bucket. `system` has no bundled
+/// asset of its own, so it uses the default tone scaled like every other one.
+String rawSoundForVolume(String soundId, int volume) {
+  final bucket = volumeBucket(volume);
+  final base = (soundId == 'system' || !isKnownSound(soundId))
+      ? 'glass_chime'
+      : soundId;
+  return '${base}_v${bucket == 0 ? volumeStepPercent : bucket}';
+}
+
+/// Versioned fire channel id for the selected tone and volume bucket. A new id
+/// is required whenever the sound changes: Android never lets an existing
+/// channel's sound be rewritten, even after the channel was deleted.
+String fireChannelId({
+  required bool overrideMode,
+  required String soundId,
+  required int volume,
+}) =>
+    '${overrideMode ? larmOverrideV3Prefix : larmFollowV3Prefix}'
+    '${rawSoundForVolume(soundId, volume)}';
+
+/// Both fire channels for one Settings snapshot, follow then override.
+List<String> fireChannelIds({
+  required String soundId,
+  required int volume,
+}) =>
+    [
+      fireChannelId(
+        overrideMode: false,
+        soundId: soundId,
+        volume: volume,
+      ),
+      fireChannelId(
+        overrideMode: true,
+        soundId: soundId,
+        volume: volume,
+      ),
+    ];
+
+/// Picks the versioned fire channel for a fire. The channel id itself encodes
+/// tone + volume because the notification channel's sound cannot be changed.
+String channelFor({
+  required bool overrideMode,
+  required String soundId,
+  required int volume,
+}) =>
+    fireChannelId(
+      overrideMode: overrideMode,
+      soundId: soundId,
+      volume: volume,
+    );
+
+/// Fire channel using the generated gain-scaled raw WAV for [volume].
+AndroidNotificationChannel fireChannel({
+  required String id,
+  required String name,
+  required String soundId,
+  required int volume,
+  required bool bypassDnd,
+}) {
+  final muted = volumeBucket(volume) == 0;
+  return AndroidNotificationChannel(
+    id,
+    name,
+    description: muted
+        ? 'Alarm and timer alerts. Sound muted in Larm settings.'
+        : 'Alarm and timer alerts at ${volumeBucket(volume)}% Larm volume.',
+    importance: bypassDnd ? Importance.max : Importance.high,
+    playSound: !muted,
+    sound: muted
+        ? null
+        : RawResourceAndroidNotificationSound(
+            rawSoundForVolume(soundId, volume),
+          ),
+    enableVibration: true,
+    bypassDnd: bypassDnd,
+    audioAttributesUsage: AudioAttributesUsage.alarm,
+  );
+}
+
+/// Silent status/rang channels are static and never replaced.
+List<AndroidNotificationChannel> staticChannels() => const [
+      AndroidNotificationChannel(
         larmArmedV2,
         'Alarm status',
         description: 'Silent ongoing notice showing the next armed alarm.',
@@ -53,7 +151,7 @@ List<AndroidNotificationChannel> v2Channels() => [
         enableVibration: false,
         showBadge: false,
       ),
-      const AndroidNotificationChannel(
+      AndroidNotificationChannel(
         larmRangV2,
         'Alarm rang',
         description: 'Silent reminder that an alarm or timer went off.',
@@ -61,34 +159,6 @@ List<AndroidNotificationChannel> v2Channels() => [
         playSound: false,
         enableVibration: false,
         showBadge: false,
-      ),
-      const AndroidNotificationChannel(
-        larmFollowV2,
-        'Alarms',
-        description: 'Alarm and timer alerts. Follows system sound mode.',
-        importance: Importance.high,
-      ),
-      for (final sound in alarmSounds)
-        if (sound.id != 'system')
-          AndroidNotificationChannel(
-            toneChannelId(sound.id),
-            'Alarms · ${sound.label}',
-            description:
-                'Alarm and timer alerts with the ${sound.label} tone.',
-            importance: Importance.high,
-            playSound: true,
-            sound: RawResourceAndroidNotificationSound(sound.id),
-            audioAttributesUsage: AudioAttributesUsage.alarm,
-          ),
-      const AndroidNotificationChannel(
-        larmOverrideV2,
-        'Alarms (override)',
-        description: 'Alarm and timer alerts that bypass Do Not Disturb.',
-        importance: Importance.max,
-        playSound: true,
-        enableVibration: true,
-        bypassDnd: true,
-        audioAttributesUsage: AudioAttributesUsage.alarm,
       ),
     ];
 
@@ -108,19 +178,22 @@ String snoozeActionId(String entryId) => 'snooze_$entryId';
 /// Full-screen alarm-style details for one fire.
 ///
 /// [overrideMode] picks the DND-bypassing channel (requires notification
-/// policy access, requested when the user opts into override).
-/// [entryId] is the alarm/timer id, namespaced by [payload]. [vibrationId] is
-/// the global pattern from Settings, applied to every alarm and timer.
+/// policy access, requested when the user opts into override). [vibrationId]
+/// is the global pattern from Settings, applied to every alarm and timer.
 AndroidNotificationDetails alarmDetails({
   required bool overrideMode,
   required String entryId,
   required String payload,
   required String soundId,
+  required int volume,
   required String vibrationId,
   int ringMs = alarmRingMs,
 }) {
-  final channelId =
-      channelFor(overrideMode: overrideMode, soundId: soundId);
+  final channelId = channelFor(
+    overrideMode: overrideMode,
+    soundId: soundId,
+    volume: volume,
+  );
   final channelName =
       overrideMode ? 'Alarms (override)' : 'Alarms · $soundId';
   final vibration = vibrationById(vibrationId);

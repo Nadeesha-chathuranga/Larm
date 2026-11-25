@@ -10,6 +10,8 @@
 library;
 
 import 'dart:io';
+
+import 'generate_volume_variants.dart' as volume_variants;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -310,4 +312,5 @@ void main() {
     _writeWav('${rawDir.path}${Platform.pathSeparator}$file', samples);
     stdout.writeln('Generated $label ($file)');
   }
+  volume_variants.generateVolumeVariants();
 }

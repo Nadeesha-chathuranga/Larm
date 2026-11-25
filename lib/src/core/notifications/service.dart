@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import 'background_handler.dart';
@@ -31,7 +32,13 @@ class NotificationService {
   /// Whether [init] completed without throwing.
   static bool get isReady => _ready;
 
-  static Future<void> init() async {
+  static const String _fireChannelConfigKey = 'flutter.larm_fire_channel_v3';
+  static const String _fireChannelIdsKey = 'flutter.larm_fire_channel_ids_v3';
+
+  static Future<void> init({
+    required String soundId,
+    required int volume,
+  }) async {
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const darwin = DarwinInitializationSettings();
     const settings = InitializationSettings(
@@ -45,22 +52,90 @@ class NotificationService {
     );
     final androidImpl = plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
-    // M6 migration: v1 channels are immutable; delete and recreate as v2.
-    for (final legacy in legacyChannelIds) {
+    // Channels are immutable. Old v1/v2 and unversioned v3 ids are replaced by
+    // versioned v3 fire channels that carry the tone at its current gain.
+    for (final legacy in legacyChannelIds()) {
       try {
         await androidImpl?.deleteNotificationChannel(channelId: legacy);
       } catch (_) {
         // Channel may not exist: ignore.
       }
     }
-    for (final channel in v2Channels()) {
+    for (final channel in staticChannels()) {
       try {
         await androidImpl?.createNotificationChannel(channel);
       } catch (_) {
-        // One bad tone channel must not abort scheduling or the armed notice.
+        // Status channels must never abort scheduling or the fire channels.
       }
     }
+    await refreshFireChannels(soundId: soundId, volume: volume);
     _ready = true;
+  }
+
+  /// Applies the current global tone and volume to the two fire channels.
+  ///
+  /// Android locks a channel's sound on first creation, so a new versioned id
+  /// is created for each tone/volume snapshot. The previous channels are
+  /// deleted only after both new ones exist, and callers resync all pending
+  /// schedules so they point at the new ids.
+  static Future<void> refreshFireChannels({
+    required String soundId,
+    required int volume,
+  }) async {
+    final android = _android;
+    if (android == null) return;
+
+    final ids = fireChannelIds(soundId: soundId, volume: volume);
+    final config = '$soundId:${volumeBucket(volume)}';
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getString(_fireChannelConfigKey) == config) {
+      try {
+        final existing = await android.getNotificationChannels();
+        if (ids.every(
+          (id) => existing?.any((channel) => channel.id == id) == true,
+        )) {
+          return;
+        }
+      } catch (_) {
+        // Fall through and recreate the channels.
+      }
+    }
+
+    final previous = prefs.getStringList(_fireChannelIdsKey) ?? <String>[];
+    try {
+      await android.createNotificationChannel(
+        fireChannel(
+          id: ids[0],
+          name: 'Alarms',
+          soundId: soundId,
+          volume: volume,
+          bypassDnd: false,
+        ),
+      );
+      await android.createNotificationChannel(
+        fireChannel(
+          id: ids[1],
+          name: 'Alarms (override)',
+          soundId: soundId,
+          volume: volume,
+          bypassDnd: true,
+        ),
+      );
+      await prefs.setString(_fireChannelConfigKey, config);
+      await prefs.setStringList(_fireChannelIdsKey, ids);
+    } catch (_) {
+      // Best effort: scheduling still works with the previous channel sound.
+      return;
+    }
+
+    for (final id in previous) {
+      if (ids.contains(id)) continue;
+      try {
+        await android.deleteNotificationChannel(channelId: id);
+      } catch (_) {
+        // Channel may already be gone: ignore.
+      }
+    }
   }
 
   static AndroidFlutterLocalNotificationsPlugin? get _android {

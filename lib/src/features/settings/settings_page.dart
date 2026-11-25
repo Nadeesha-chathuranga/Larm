@@ -63,10 +63,27 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     }
   }
 
-  /// Tone changes must reschedule so the new notification channel is used.
+  /// Tone changes must reschedule so the notification channel uses the new
+  /// tone at the current volume.
   Future<void> _setDefaultSound(String id) async {
     await hapticTap();
-    await ref.read(settingsControllerProvider.notifier).updateDefaultSound(id);
+    final controller = ref.read(settingsControllerProvider.notifier);
+    await controller.updateDefaultSound(id);
+    await _commitFireSettings();
+  }
+
+  /// Android locks a channel's sound on creation, so versioned fire channels
+  /// are created when the user settles on a new tone or volume.
+  Future<void> _commitFireSettings() async {
+    final settings = ref.read(settingsControllerProvider);
+    try {
+      await NotificationService.refreshFireChannels(
+        soundId: settings.defaultSoundId,
+        volume: settings.alarmVolume,
+      );
+    } catch (_) {
+      // Platform channels absent (tests/desktop): ignore.
+    }
     await _resyncAll();
   }
 
@@ -222,8 +239,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 onVolumeChanged: (value) async {
                   await ref
                       .read(settingsControllerProvider.notifier)
-                      .updateAlarmVolume(value.round());
+                      .updateAlarmVolume((value * 100).round());
                 },
+                onVolumeCommitted: () => unawaited(_commitFireSettings()),
                 onSystemVolume: () => unawaited(
                   FireLauncher.openAlarmVolumeSettings(),
                 ),
@@ -303,18 +321,19 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 }
 
-/// Selected-tone bar with a play button and the in-app volume slider.
+/// Selected-tone bar with a play button and the real alarm volume slider.
 ///
-/// Android does not allow an app to change the OS alarm stream volume, so the
-/// slider controls previews and the in-app fallback ring; the scheduled
-/// notification tone follows the system alarm volume. The button below opens
-/// that system setting.
+/// Android does not let an app change the OS alarm stream, so Larm regenerates
+/// the bundled tone at 10% gain steps and swaps it into the fire notification
+/// channel. The same value scales the full-screen ring and previews. The
+/// button below opens Android's alarm volume for the system tone.
 class _SoundVolumeBar extends StatelessWidget {
   const _SoundVolumeBar({
     required this.soundId,
     required this.volume,
     required this.onPreview,
     required this.onVolumeChanged,
+    required this.onVolumeCommitted,
     required this.onSystemVolume,
   });
 
@@ -322,6 +341,7 @@ class _SoundVolumeBar extends StatelessWidget {
   final int volume;
   final Future<void> Function() onPreview;
   final ValueChanged<double> onVolumeChanged;
+  final VoidCallback onVolumeCommitted;
   final VoidCallback onSystemVolume;
 
   @override
@@ -357,12 +377,14 @@ class _SoundVolumeBar extends StatelessWidget {
             onTap: () => unawaited(onPreview()),
           ),
           Slider(
+            key: const Key('alarm-volume-slider'),
             value: volume / 100,
             min: 0,
             max: 1,
-            divisions: 20,
+            divisions: 10,
             label: '$volume%',
             onChanged: onVolumeChanged,
+            onChangeEnd: (_) => onVolumeCommitted(),
           ),
           Align(
             alignment: Alignment.centerLeft,

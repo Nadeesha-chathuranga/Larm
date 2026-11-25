@@ -43,7 +43,10 @@ Future<void> main() async {
   await _migrateRepeatsToOneTime(alarmBox);
   final initialSnoozes = await readSnoozes();
 
-  await NotificationService.init();
+  await NotificationService.init(
+    soundId: initialSettings.defaultSoundId,
+    volume: initialSettings.alarmVolume,
+  );
 
   // Recompute every slot on cold start. Covers reboot (the plugin restores
   // its own schedules too), app update, and permission-revocation recovery.
